@@ -26,6 +26,21 @@ export type CapturedTarget =
  * Must be called while the original selection is still live.
  */
 export function captureSelectionTarget(): CapturedTarget {
+  // A selection inside a <textarea>/<input> is not reported by
+  // window.getSelection(); it lives on the focused element's
+  // selectionStart/selectionEnd, so check the active element first.
+  const active = document.activeElement;
+  if (
+    active instanceof HTMLTextAreaElement ||
+    (active instanceof HTMLInputElement && isTextInput(active))
+  ) {
+    const start = active.selectionStart ?? 0;
+    const end = active.selectionEnd ?? 0;
+    if (end > start) {
+      return { kind: 'input', element: active, start, end };
+    }
+  }
+
   const selection = window.getSelection();
   if (!selection || selection.rangeCount === 0) return { kind: 'none' };
 
