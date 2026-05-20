@@ -156,10 +156,13 @@ async function resolveExtensionId(): Promise<string> {
   mkdirSync(userDataDir, { recursive: true });
 
   const context = await chromium.launchPersistentContext(userDataDir, {
+    // headless:false + --headless=new -- windowless, but loads the extension.
+    // See tests/e2e/fixtures/extension-fixture.ts for the rationale.
     headless: false,
     args: [
       `--disable-extensions-except=${DIST_TEST_PATH}`,
       `--load-extension=${DIST_TEST_PATH}`,
+      '--headless=new',
       '--disable-infobars',
       '--no-sandbox',
     ],
