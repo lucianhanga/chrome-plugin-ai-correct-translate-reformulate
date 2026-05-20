@@ -505,7 +505,7 @@ test.describe('Overlay: Replace / Append / Close behavior', () => {
     expect(valueAfterReplace).not.toBe(originalValue);
   });
 
-  test('Copied toast appears after Enter-triggered Replace on non-editable text', async ({ context, testServerBaseUrl }) => {
+  test('non-editable selection: the result overlay renders and dismisses via Escape', async ({ context, testServerBaseUrl }) => {
     const page = await context.newPage();
     await page.goto(`${testServerBaseUrl}/test-page.html`);
 
@@ -524,6 +524,9 @@ test.describe('Overlay: Replace / Append / Close behavior', () => {
     await waitForContentScript(sw, realTabId);
     await page.evaluate(() => document.body.focus());
 
+    // No SHOW_LOADING precedes this, so no editable selection is captured --
+    // the result is treated as non-editable: the overlay shows only Close
+    // (Replace/Append are not rendered), and the result is still auto-copied.
     await sendMessageToPage(sw, realTabId, {
       type: 'SHOW_RESULT',
       payload: {
@@ -539,11 +542,10 @@ test.describe('Overlay: Replace / Append / Close behavior', () => {
       { timeout: 5_000 },
     );
 
-    await page.keyboard.press('Enter');
-
-    // showCopiedToast() appends a [data-ct-toast-host] element to document.body.
+    // Escape dismisses the overlay.
+    await page.keyboard.press('Escape');
     await page.waitForFunction(
-      () => document.querySelector('[data-ct-toast-host]') !== null,
+      () => document.querySelector('[data-ct-overlay-host]') === null,
       undefined,
       { timeout: 5_000 },
     );
