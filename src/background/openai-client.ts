@@ -7,6 +7,7 @@
 //   - The key is never logged, never placed in an Error message or cause.
 //   - Raw OpenAI response bodies are never surfaced in user-facing errors.
 
+import type { LLMResult } from '../shared/types.ts';
 import type { LLMClient, LLMHealthResult } from './llm-client.ts';
 import { LLMError } from '../shared/errors.ts';
 import {
@@ -51,7 +52,7 @@ function buildOpenAIRequest(
  * @param userText - The user's input text
  * @param model - The model identifier (e.g. 'gpt-5-nano')
  * @param timeoutMs - Request timeout in milliseconds
- * @returns The model's trimmed response text
+ * @returns LLMResult with trimmed text, model name, token count, and elapsed time
  * @throws LLMError with an appropriate ErrorCode on failure
  */
 export async function callOpenAI(
@@ -60,9 +61,9 @@ export async function callOpenAI(
   userText: string,
   model: string,
   timeoutMs: number = REQUEST_TIMEOUT_MS,
-): Promise<string> {
+): Promise<LLMResult> {
   if (!userText || userText.trim() === '') {
-    return '';
+    return { text: '', model, totalTokens: null, elapsedMs: 0 };
   }
 
   const url = `${OPENAI_API_BASE}/v1/chat/completions`;
@@ -71,6 +72,7 @@ export async function callOpenAI(
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
+  const startMs = Date.now();
   let response: Response;
   try {
     response = await fetch(url, {
@@ -91,6 +93,8 @@ export async function callOpenAI(
   } finally {
     clearTimeout(timer);
   }
+
+  const elapsedMs = Date.now() - startMs;
 
   if (response.status === 401) {
     throw new LLMError('OPENAI_AUTH_FAILED', 'OpenAI auth failed (401)');
@@ -128,14 +132,24 @@ export async function callOpenAI(
   // Defensive extraction mirroring ollama-client.ts. The error message does NOT
   // include JSON.stringify(data) because an OpenAI response body could contain
   // account- or request-correlated identifiers.
-  const content = (data as { choices?: Array<{ message?: { content?: unknown } }> })
-    ?.choices?.[0]?.message?.content;
+  const typed = data as {
+    choices?: Array<{ message?: { content?: unknown } }>;
+    model?: unknown;
+    usage?: { total_tokens?: unknown };
+  };
+
+  const content = typed?.choices?.[0]?.message?.content;
 
   if (typeof content !== 'string') {
     throw new LLMError('UNEXPECTED_RESPONSE', 'Unexpected response shape from OpenAI');
   }
 
-  return content.trim();
+  // OpenAI responses always include model and usage; read them defensively.
+  const resolvedModel = typeof typed.model === 'string' ? typed.model : model;
+  const totalTokens =
+    typeof typed.usage?.total_tokens === 'number' ? typed.usage.total_tokens : null;
+
+  return { text: content.trim(), model: resolvedModel, totalTokens, elapsedMs };
 }
 
 // ============================================================
@@ -198,7 +212,7 @@ export async function checkOpenAIHealth(
  */
 export function createOpenAIClient(cfg: { apiKey: string; model: string }): LLMClient {
   return {
-    call: (system, user, opts): Promise<string> =>
+    call: (system, user, opts): Promise<LLMResult> =>
       callOpenAI(cfg.apiKey, system, user, opts.model, opts.timeoutMs),
     healthCheck: (model): Promise<LLMHealthResult> =>
       checkOpenAIHealth(cfg.apiKey, model),

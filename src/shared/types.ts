@@ -95,6 +95,21 @@ export interface OllamaCallOptions {
 }
 
 // ============================================================
+// LLM Result (carries text + metadata returned by every provider call)
+// ============================================================
+
+export interface LLMResult {
+  /** The trimmed text produced by the model. */
+  text: string;
+  /** The model identifier reported by the response (e.g. "qwen3:14b", "gpt-5-nano"). */
+  model: string;
+  /** Total tokens consumed (prompt + completion). Null when the response omits usage. */
+  totalTokens: number | null;
+  /** Wall-clock milliseconds from request start to response received. */
+  elapsedMs: number;
+}
+
+// ============================================================
 // Validation
 // ============================================================
 

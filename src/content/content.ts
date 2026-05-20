@@ -65,7 +65,7 @@ function handleMessage(message: ServiceWorkerToContentScriptMessage): void {
     case 'SHOW_LOADING':
       // Capture the selection now, while it is still live, for Replace/Append.
       capturedTarget = captureSelectionTarget();
-      showLoading(message.payload.action, message.payload.originalText);
+      showLoading(message.payload.action, message.payload.originalText, message.payload.provider);
       break;
 
     case 'SHOW_RESULT': {
@@ -75,6 +75,9 @@ function handleMessage(message: ServiceWorkerToContentScriptMessage): void {
         originalText: message.payload.originalText,
         resultText: message.payload.resultText,
         editable: isEditableTarget(target),
+        model: message.payload.model,
+        totalTokens: message.payload.totalTokens,
+        elapsedMs: message.payload.elapsedMs,
         ...(message.payload.targetLanguage !== undefined
           ? { targetLanguage: message.payload.targetLanguage }
           : {}),
@@ -113,11 +116,13 @@ function handleMessage(message: ServiceWorkerToContentScriptMessage): void {
       break;
 
     case 'START_TRANSLATE':
-      runTranslateFlow(message.payload.originalText, message.payload.targetLanguage).catch(
-        (err: unknown) => {
-          console.error('[content] translate flow failed:', err);
-        },
-      );
+      runTranslateFlow(
+        message.payload.originalText,
+        message.payload.targetLanguage,
+        message.payload.provider,
+      ).catch((err: unknown) => {
+        console.error('[content] translate flow failed:', err);
+      });
       break;
 
     default: {
@@ -139,12 +144,13 @@ function handleMessage(message: ServiceWorkerToContentScriptMessage): void {
 async function runTranslateFlow(
   originalText: string,
   targetLanguage: SupportedLanguage,
+  provider: import('../shared/types.ts').LLMProvider = 'ollama',
 ): Promise<void> {
   // Capture the selection before the overlay is shown so Replace/Append can
   // act on the original text field.
   const target = captureSelectionTarget();
 
-  showLoading('translate', originalText);
+  showLoading('translate', originalText, provider);
 
   let response: ServiceWorkerResponse;
   try {
@@ -185,6 +191,9 @@ async function runTranslateFlow(
       resultText: translation,
       targetLanguage,
       editable: isEditableTarget(target),
+      model: response.model,
+      totalTokens: response.totalTokens,
+      elapsedMs: response.elapsedMs,
     },
     {
       onReplace: (text: string) => {

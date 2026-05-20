@@ -1,6 +1,13 @@
 // tests/unit/message-handler.test.ts
 import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
 import { installChromeMock, resetChromeMock } from '../mocks/chrome.ts';
+import type { LLMResult } from '../../src/shared/types.ts';
+
+// The task functions and the LLMClient.call() now resolve to an LLMResult,
+// not a bare string. This helper builds that shape for mock return values.
+function llmResult(text: string, overrides: Partial<LLMResult> = {}): LLMResult {
+  return { text, model: 'qwen3:14b', totalTokens: 142, elapsedMs: 2400, ...overrides };
+}
 
 // Mock task functions
 vi.mock('../../src/background/tasks.ts', () => ({
@@ -51,7 +58,7 @@ describe('handleMessage', () => {
 
   it('handles CORRECT_GRAMMAR and returns success', async () => {
     const { correctGrammar } = await import('../../src/background/tasks.ts');
-    vi.mocked(correctGrammar).mockResolvedValue('She does not know anything.');
+    vi.mocked(correctGrammar).mockResolvedValue(llmResult('She does not know anything.'));
 
     const { handleMessage } = await import('../../src/background/message-handler.ts');
     const response = await handleMessage({
@@ -61,6 +68,31 @@ describe('handleMessage', () => {
 
     expect(response).toMatchObject({ success: true, result: 'She does not know anything.' });
     expect(correctGrammar).toHaveBeenCalledWith('She dont know nothing.', expect.any(Object));
+  });
+
+  it('threads LLM metadata (model, tokens, elapsed) into the CORRECT_GRAMMAR success response', async () => {
+    const { correctGrammar } = await import('../../src/background/tasks.ts');
+    vi.mocked(correctGrammar).mockResolvedValue(
+      llmResult('She does not know anything.', {
+        model: 'qwen3:14b',
+        totalTokens: 142,
+        elapsedMs: 2400,
+      }),
+    );
+
+    const { handleMessage } = await import('../../src/background/message-handler.ts');
+    const response = await handleMessage({
+      type: 'CORRECT_GRAMMAR',
+      payload: { text: 'She dont know nothing.' },
+    });
+
+    expect(response).toMatchObject({
+      success: true,
+      result: 'She does not know anything.',
+      model: 'qwen3:14b',
+      totalTokens: 142,
+      elapsedMs: 2400,
+    });
   });
 
   it('returns EMPTY_INPUT for CORRECT_GRAMMAR with empty text', async () => {
@@ -83,7 +115,7 @@ describe('handleMessage', () => {
 
   it('handles TRANSLATE and returns success', async () => {
     const { translateText } = await import('../../src/background/tasks.ts');
-    vi.mocked(translateText).mockResolvedValue('Soarele straluceste.');
+    vi.mocked(translateText).mockResolvedValue(llmResult('Soarele straluceste.'));
 
     const { handleMessage } = await import('../../src/background/message-handler.ts');
     const response = await handleMessage({
@@ -97,6 +129,27 @@ describe('handleMessage', () => {
       'Romanian',
       expect.any(Object),
     );
+  });
+
+  it('threads LLM metadata into the TRANSLATE success response', async () => {
+    const { translateText } = await import('../../src/background/tasks.ts');
+    vi.mocked(translateText).mockResolvedValue(
+      llmResult('Soarele straluceste.', { model: 'qwen3:14b', totalTokens: 64, elapsedMs: 900 }),
+    );
+
+    const { handleMessage } = await import('../../src/background/message-handler.ts');
+    const response = await handleMessage({
+      type: 'TRANSLATE',
+      payload: { text: 'The sun is shining.', targetLanguage: 'Romanian' },
+    });
+
+    expect(response).toMatchObject({
+      success: true,
+      result: 'Soarele straluceste.',
+      model: 'qwen3:14b',
+      totalTokens: 64,
+      elapsedMs: 900,
+    });
   });
 
   it('returns EMPTY_INPUT for TRANSLATE with empty text', async () => {
@@ -186,7 +239,9 @@ describe('handleMessage: OpenAI provider routing', () => {
   it('routes CORRECT_GRAMMAR through getActiveClient when provider is openai', async () => {
     await selectOpenAIProvider();
     const { getActiveClient } = await import('../../src/background/llm-client.ts');
-    const callMock = vi.fn().mockResolvedValue('Corrected via OpenAI.');
+    const callMock = vi.fn().mockResolvedValue(
+      llmResult('Corrected via OpenAI.', { model: 'gpt-5-nano', totalTokens: 50, elapsedMs: 700 }),
+    );
     vi.mocked(getActiveClient).mockReturnValue({ call: callMock, healthCheck: vi.fn() });
 
     const { handleMessage } = await import('../../src/background/message-handler.ts');
@@ -195,7 +250,13 @@ describe('handleMessage: OpenAI provider routing', () => {
       payload: { text: 'She dont know.' },
     });
 
-    expect(response).toMatchObject({ success: true, result: 'Corrected via OpenAI.' });
+    expect(response).toMatchObject({
+      success: true,
+      result: 'Corrected via OpenAI.',
+      model: 'gpt-5-nano',
+      totalTokens: 50,
+      elapsedMs: 700,
+    });
     expect(getActiveClient).toHaveBeenCalled();
     expect(callMock).toHaveBeenCalled();
     // The Ollama task path must NOT be used when OpenAI is the provider.
@@ -206,7 +267,9 @@ describe('handleMessage: OpenAI provider routing', () => {
   it('routes TRANSLATE through getActiveClient when provider is openai', async () => {
     await selectOpenAIProvider();
     const { getActiveClient } = await import('../../src/background/llm-client.ts');
-    const callMock = vi.fn().mockResolvedValue('Translated via OpenAI.');
+    const callMock = vi.fn().mockResolvedValue(
+      llmResult('Translated via OpenAI.', { model: 'gpt-5-nano', totalTokens: 33, elapsedMs: 500 }),
+    );
     vi.mocked(getActiveClient).mockReturnValue({ call: callMock, healthCheck: vi.fn() });
 
     const { handleMessage } = await import('../../src/background/message-handler.ts');
@@ -215,7 +278,13 @@ describe('handleMessage: OpenAI provider routing', () => {
       payload: { text: 'Hello.', targetLanguage: 'German' },
     });
 
-    expect(response).toMatchObject({ success: true, result: 'Translated via OpenAI.' });
+    expect(response).toMatchObject({
+      success: true,
+      result: 'Translated via OpenAI.',
+      model: 'gpt-5-nano',
+      totalTokens: 33,
+      elapsedMs: 500,
+    });
     expect(callMock).toHaveBeenCalled();
   });
 

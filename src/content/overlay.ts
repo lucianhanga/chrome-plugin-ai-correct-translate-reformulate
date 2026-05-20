@@ -19,6 +19,12 @@ export interface OverlayResultData {
   targetLanguage?: string;
   /** Whether the selection can be edited in place (Replace/Append apply). */
   editable: boolean;
+  /** Model identifier reported by the LLM response. */
+  model?: string;
+  /** Total tokens consumed (prompt + completion), or null when absent. */
+  totalTokens?: number | null;
+  /** Wall-clock milliseconds for the LLM call. */
+  elapsedMs?: number;
 }
 
 export interface OverlayErrorData {
@@ -49,11 +55,17 @@ let primaryKeyAction: (() => void) | null = null;
 // Public API
 // ============================================================
 
-/** Show the loading state ("Correcting…" / "Translating…"). */
-export function showLoading(action: ActionType, _originalText: string): void {
+/** Show the loading state with provider-aware label. */
+export function showLoading(
+  action: ActionType,
+  _originalText: string,
+  provider: import('../shared/types.ts').LLMProvider = 'ollama',
+): void {
   const position = getSelectionPosition();
   const root = createOrReplaceOverlay();
-  renderLoading(root, action === 'correct' ? 'Correcting…' : 'Translating…');
+  const providerLabel = provider === 'openai' ? 'OpenAI' : 'Ollama';
+  const verb = action === 'correct' ? 'Correcting' : 'Translating';
+  renderLoading(root, `${verb}…`, `Processing with ${providerLabel}…`);
   positionOverlay(currentHostElement!, position);
 }
 
@@ -118,7 +130,7 @@ function cleanup(): void {
 // Renderers
 // ============================================================
 
-function renderLoading(root: ShadowRoot, title: string): void {
+function renderLoading(root: ShadowRoot, title: string, subtitle?: string): void {
   removeKeyboardHandler();
   primaryKeyAction = null;
 
@@ -132,7 +144,7 @@ function renderLoading(root: ShadowRoot, title: string): void {
   spinner.className = 'ct-spinner';
 
   const label = document.createElement('span');
-  label.textContent = title;
+  label.textContent = subtitle ?? title;
 
   loadingDiv.appendChild(spinner);
   loadingDiv.appendChild(label);
@@ -181,6 +193,21 @@ function renderResult(
   hint.className = 'ct-copied-hint';
   hint.textContent = 'Copied to clipboard';
   resultDiv.appendChild(hint);
+
+  // Metadata line: model · tokens · elapsed (shown only when model is present).
+  if (data.model) {
+    const meta = document.createElement('div');
+    meta.className = 'ct-result-meta';
+    const parts: string[] = [data.model];
+    if (typeof data.totalTokens === 'number' && data.totalTokens > 0) {
+      parts.push(`${data.totalTokens} tokens`);
+    }
+    if (typeof data.elapsedMs === 'number' && data.elapsedMs > 0) {
+      parts.push(`${(data.elapsedMs / 1000).toFixed(1)} s`);
+    }
+    meta.textContent = parts.join(' · ');
+    resultDiv.appendChild(meta);
+  }
 
   body.appendChild(resultDiv);
 

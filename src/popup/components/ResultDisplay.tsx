@@ -7,11 +7,17 @@ import React, { useEffect, useState } from 'react';
 interface ResultDisplayProps {
   originalText: string;
   resultText: string;
+  model?: string;
+  totalTokens?: number | null;
+  elapsedMs?: number;
 }
 
 export function ResultDisplay({
   originalText,
   resultText,
+  model,
+  totalTokens,
+  elapsedMs,
 }: ResultDisplayProps): React.ReactElement {
   const [copied, setCopied] = useState(false);
 
@@ -89,6 +95,26 @@ export function ResultDisplay({
           className="text-[11px] font-semibold text-[#22c55e]"
         >
           Copied to clipboard
+        </span>
+      )}
+
+      {/* Metadata line: model · tokens · elapsed */}
+      {model && (
+        <span
+          data-testid="result-meta"
+          className="text-[10px] text-[#585b70] leading-tight"
+        >
+          {[
+            model,
+            typeof totalTokens === 'number' && totalTokens > 0
+              ? `${totalTokens} tokens`
+              : null,
+            typeof elapsedMs === 'number' && elapsedMs > 0
+              ? `${(elapsedMs / 1000).toFixed(1)} s`
+              : null,
+          ]
+            .filter(Boolean)
+            .join(' · ')}
         </span>
       )}
     </div>

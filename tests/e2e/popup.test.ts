@@ -222,6 +222,25 @@ test.describe('Popup: Quick Action -- Correct', () => {
     await expect(popup.getByRole('button', { name: /^Clear$/i })).toHaveCount(0);
   });
 
+  test('result display shows the metadata line (model, tokens, elapsed)', async ({ openPopup }) => {
+    // After a correction, the result panel shows a small metadata line:
+    // "<model> · <n> tokens · <t> s". The exact numbers are non-deterministic;
+    // we assert the line is present and well-formed.
+    const popup = await openPopup();
+    await popup.locator('textarea').fill('She dont know nothing about them projects.');
+    await popup.getByRole('button', { name: /^Correct$/i }).click();
+
+    const resultContainer = popup.locator('[data-testid="result-text"]');
+    await resultContainer.waitFor({ state: 'visible', timeout: 120_000 });
+
+    const meta = popup.locator('[data-testid="result-meta"]');
+    await expect(meta).toBeVisible({ timeout: 5_000 });
+    const metaText = (await meta.textContent())?.trim() ?? '';
+    // The model name is always present; the seconds segment ends with " s".
+    expect(metaText.length).toBeGreaterThan(0);
+    expect(metaText).toMatch(/\d+(\.\d+)?\s*s/);
+  });
+
   test('character counter shows correct count and goes red over limit', async ({ openPopup }) => {
     const popup = await openPopup();
     const textarea = popup.locator('textarea');

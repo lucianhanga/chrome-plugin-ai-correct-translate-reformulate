@@ -6,12 +6,16 @@ import { callOllama, checkOllamaHealth } from '../../src/background/ollama-clien
 // Fetch Mock Helpers
 // ============================================================
 
-function mockFetchSuccess(content: string): void {
+function mockFetchSuccess(
+  content: string,
+  extra: { model?: string; usage?: { total_tokens?: number } } = {},
+): void {
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
     ok: true,
     status: 200,
     json: async () => ({
       choices: [{ message: { content } }],
+      ...extra,
     }),
     text: async () => '',
   }));
@@ -57,22 +61,45 @@ describe('callOllama', () => {
   it('returns trimmed response content on success', async () => {
     mockFetchSuccess('  Corrected text.  ');
     const result = await callOllama('System prompt', 'input text');
-    expect(result).toBe('Corrected text.');
+    expect(result.text).toBe('Corrected text.');
   });
 
-  it('returns empty string for empty user text', async () => {
+  it('returns an LLMResult with model, token count, and elapsed time', async () => {
+    mockFetchSuccess('Corrected text.', {
+      model: 'qwen3:14b',
+      usage: { total_tokens: 142 },
+    });
+    const result = await callOllama('System prompt', 'input text');
+    expect(result.text).toBe('Corrected text.');
+    expect(result.model).toBe('qwen3:14b');
+    expect(result.totalTokens).toBe(142);
+    expect(typeof result.elapsedMs).toBe('number');
+    expect(result.elapsedMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it('falls back to the requested model and null tokens when the response omits usage', async () => {
+    mockFetchSuccess('Corrected text.');
+    const result = await callOllama('System prompt', 'input text', { model: 'llama3:8b' });
+    expect(result.model).toBe('llama3:8b');
+    expect(result.totalTokens).toBeNull();
+  });
+
+  it('returns an empty-text LLMResult for empty user text', async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
     const result = await callOllama('System prompt', '');
-    expect(result).toBe('');
+    expect(result.text).toBe('');
+    expect(result.totalTokens).toBeNull();
+    expect(result.elapsedMs).toBe(0);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('returns empty string for whitespace-only user text', async () => {
+  it('returns an empty-text LLMResult for whitespace-only user text', async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
     const result = await callOllama('System prompt', '   ');
-    expect(result).toBe('');
+    expect(result.text).toBe('');
+    expect(result.totalTokens).toBeNull();
     expect(fetchMock).not.toHaveBeenCalled();
   });
 

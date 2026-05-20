@@ -69,6 +69,8 @@ export interface ShowLoadingMessage {
   payload: {
     action: ActionType;
     originalText: string;
+    /** Active LLM provider, used to display "Processing with <provider>..." */
+    provider: import('./types.ts').LLMProvider;
   };
 }
 
@@ -79,6 +81,12 @@ export interface ShowResultMessage {
     originalText: string;
     resultText: string;
     targetLanguage?: SupportedLanguage;
+    /** Model identifier reported by the LLM response. */
+    model: string;
+    /** Total tokens consumed (prompt + completion), or null when absent. */
+    totalTokens: number | null;
+    /** Wall-clock milliseconds for the LLM call. */
+    elapsedMs: number;
   };
 }
 
@@ -99,6 +107,8 @@ export interface StartTranslateMessage {
   payload: {
     originalText: string;
     targetLanguage: SupportedLanguage;
+    /** Active LLM provider, used to display "Processing with <provider>..." */
+    provider: import('./types.ts').LLMProvider;
   };
 }
 
@@ -116,6 +126,12 @@ export type ServiceWorkerToContentScriptMessage =
 export interface SuccessResponse {
   success: true;
   result: string;
+  /** Model identifier reported by the LLM response. */
+  model: string;
+  /** Total tokens consumed (prompt + completion), or null when absent. */
+  totalTokens: number | null;
+  /** Wall-clock milliseconds for the LLM call. */
+  elapsedMs: number;
 }
 
 export interface ErrorResponse {

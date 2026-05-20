@@ -63,24 +63,30 @@ export async function handleMessage(message: unknown): Promise<ServiceWorkerResp
 
       const settings = await getSettings();
 
-      let result: string;
+      let llmResult: import('../shared/types.ts').LLMResult;
       if (settings.provider === 'openai') {
         // Route through the provider-agnostic client for OpenAI.
         const client = getActiveClient(settings);
-        result = await client.call(
+        llmResult = await client.call(
           GRAMMAR_CORRECT_SYSTEM,
           message.payload.text,
           { model: settings.openaiModel, temperature: 0.2 },
         );
       } else {
         // Ollama path: delegate to correctGrammar so existing tests remain valid.
-        result = await correctGrammar(message.payload.text, {
+        llmResult = await correctGrammar(message.payload.text, {
           model: settings.model,
           endpoint: settings.ollamaEndpoint,
         });
       }
 
-      return { success: true, result };
+      return {
+        success: true,
+        result: llmResult.text,
+        model: llmResult.model,
+        totalTokens: llmResult.totalTokens,
+        elapsedMs: llmResult.elapsedMs,
+      };
     }
 
     // TRANSLATE
@@ -95,28 +101,34 @@ export async function handleMessage(message: unknown): Promise<ServiceWorkerResp
 
       const settings = await getSettings();
 
-      let result: string;
+      let llmResult: import('../shared/types.ts').LLMResult;
       if (settings.provider === 'openai') {
         // Route through the provider-agnostic client for OpenAI.
         const client = getActiveClient(settings);
         const systemPrompt = buildTranslateSystemPrompt(
           message.payload.targetLanguage,
         );
-        result = await client.call(
+        llmResult = await client.call(
           systemPrompt,
           message.payload.text,
           { model: settings.openaiModel, temperature: 0.2 },
         );
       } else {
         // Ollama path: delegate to translateText so existing tests remain valid.
-        result = await translateText(
+        llmResult = await translateText(
           message.payload.text,
           message.payload.targetLanguage,
           { model: settings.model, endpoint: settings.ollamaEndpoint },
         );
       }
 
-      return { success: true, result };
+      return {
+        success: true,
+        result: llmResult.text,
+        model: llmResult.model,
+        totalTokens: llmResult.totalTokens,
+        elapsedMs: llmResult.elapsedMs,
+      };
     }
 
     // HEALTH_CHECK

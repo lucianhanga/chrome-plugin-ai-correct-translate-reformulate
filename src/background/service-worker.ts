@@ -80,7 +80,7 @@ function handleContextMenuClick(
       target: { tabId },
       files: ['content.js'],
     })
-    .then(() => {
+    .then(async () => {
       // Content script is now injected. Send error and stop if input is invalid.
       if (!validation.valid) {
         const errorCode = validation.errorCode ?? 'INVALID_MESSAGE';
@@ -96,6 +96,9 @@ function handleContextMenuClick(
         throw Object.assign(new Error(getUserMessage(errorCode)), { _validationError: true });
       }
 
+      // Read settings to know the active provider for UI labelling.
+      const settings = await getSettings();
+
       // Translate: hand off to the content script, which runs the
       // translate-and-show-result flow itself (the model auto-detects the
       // source language during the translation call -- no separate step).
@@ -105,6 +108,7 @@ function handleContextMenuClick(
           payload: {
             originalText: selectionText,
             targetLanguage: resolvedAction.targetLanguage,
+            provider: settings.provider,
           },
         });
         return null;
@@ -116,6 +120,7 @@ function handleContextMenuClick(
         payload: {
           action: resolvedAction.action,
           originalText: selectionText,
+          provider: settings.provider,
         },
       };
       sendToContentScript(tabId, loadingMsg);
@@ -123,8 +128,8 @@ function handleContextMenuClick(
       // Dispatch to the correct task
       return processContextMenuAction(resolvedAction.action, selectionText, resolvedAction.targetLanguage);
     })
-    .then((result: string | null) => {
-      if (result === null) {
+    .then((llmResult: import('../shared/types.ts').LLMResult | null) => {
+      if (llmResult === null) {
         // Translate path was handed off to the content script.
         return;
       }
@@ -133,7 +138,10 @@ function handleContextMenuClick(
         payload: {
           action: resolvedAction.action,
           originalText: selectionText,
-          resultText: result,
+          resultText: llmResult.text,
+          model: llmResult.model,
+          totalTokens: llmResult.totalTokens,
+          elapsedMs: llmResult.elapsedMs,
           ...(resolvedAction.targetLanguage !== undefined
             ? { targetLanguage: resolvedAction.targetLanguage }
             : {}),
@@ -185,7 +193,7 @@ async function processContextMenuAction(
   action: 'correct' | 'translate',
   text: string,
   targetLanguage?: import('../shared/types.ts').SupportedLanguage,
-): Promise<string> {
+): Promise<import('../shared/types.ts').LLMResult> {
   const settings = await getSettings();
   const ollamaOptions = {
     model: settings.model,

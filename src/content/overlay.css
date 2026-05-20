@@ -198,6 +198,13 @@
   color: #22c55e;
 }
 
+.ct-result-meta {
+  font-size: 10px;
+  color: #585b70;
+  letter-spacing: 0.01em;
+  margin-top: 2px;
+}
+
 /* ---- Error State ---- */
 
 .ct-overlay-error {

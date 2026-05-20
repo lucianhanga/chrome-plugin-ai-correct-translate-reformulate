@@ -3,7 +3,7 @@
 // Only the service worker calls Ollama -- never content scripts or the popup.
 
 import type { LLMClient, LLMHealthResult } from './llm-client.ts';
-import type { OllamaCallOptions, OllamaHealthResult } from '../shared/types.ts';
+import type { LLMResult, OllamaCallOptions, OllamaHealthResult } from '../shared/types.ts';
 import {
   DEFAULT_MODEL,
   DEFAULT_OLLAMA_ENDPOINT,
@@ -49,14 +49,14 @@ function buildChatRequest(
  * @param systemPrompt - The system prompt for the task
  * @param userText - The user's input text
  * @param options - Optional overrides for model, endpoint, timeout, temperature
- * @returns The model's trimmed response text
+ * @returns LLMResult with trimmed text, model name, token count, and elapsed time
  * @throws Error with descriptive message on network failure, timeout, or Ollama error
  */
 export async function callOllama(
   systemPrompt: string,
   userText: string,
   options: OllamaCallOptions = {},
-): Promise<string> {
+): Promise<LLMResult> {
   const {
     model = DEFAULT_MODEL,
     endpoint = DEFAULT_OLLAMA_ENDPOINT,
@@ -65,7 +65,7 @@ export async function callOllama(
   } = options;
 
   if (!userText || userText.trim() === '') {
-    return '';
+    return { text: '', model, totalTokens: null, elapsedMs: 0 };
   }
 
   const url = `${endpoint}/v1/chat/completions`;
@@ -74,6 +74,7 @@ export async function callOllama(
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
+  const startMs = Date.now();
   let response: Response;
   try {
     response = await fetch(url, {
@@ -93,6 +94,8 @@ export async function callOllama(
     clearTimeout(timer);
   }
 
+  const elapsedMs = Date.now() - startMs;
+
   if (!response.ok) {
     const text = await response.text().catch(() => '');
     if (response.status === 404) {
@@ -103,14 +106,25 @@ export async function callOllama(
 
   const data: unknown = await response.json();
 
-  const content = (data as { choices?: Array<{ message?: { content?: unknown } }> })
-    ?.choices?.[0]?.message?.content;
+  const typed = data as {
+    choices?: Array<{ message?: { content?: unknown } }>;
+    model?: unknown;
+    usage?: { total_tokens?: unknown };
+  };
+
+  const content = typed?.choices?.[0]?.message?.content;
 
   if (typeof content !== 'string') {
     throw new Error(`Unexpected Ollama response shape: ${JSON.stringify(data)}`);
   }
 
-  return content.trim();
+  // The Ollama /v1/chat/completions response may include the resolved model name
+  // and a usage object. Use them when present; degrade gracefully otherwise.
+  const resolvedModel = typeof typed.model === 'string' ? typed.model : model;
+  const totalTokens =
+    typeof typed.usage?.total_tokens === 'number' ? typed.usage.total_tokens : null;
+
+  return { text: content.trim(), model: resolvedModel, totalTokens, elapsedMs };
 }
 
 // ============================================================
@@ -166,7 +180,7 @@ export async function checkOllamaHealth(
  */
 export function createOllamaClient(cfg: { endpoint: string }): LLMClient {
   return {
-    call: (system, user, opts): Promise<string> => {
+    call: async (system, user, opts): Promise<LLMResult> => {
       const callOpts: OllamaCallOptions = {
         endpoint: cfg.endpoint,
         model: opts.model,

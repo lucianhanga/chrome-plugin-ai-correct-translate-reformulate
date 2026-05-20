@@ -1,7 +1,7 @@
 // src/background/tasks.ts
 // High-level task functions for grammar correction and translation.
 
-import type { SupportedLanguage, OllamaCallOptions } from '../shared/types.ts';
+import type { LLMResult, SupportedLanguage, OllamaCallOptions } from '../shared/types.ts';
 import { callOllama } from './ollama-client.ts';
 import {
   GRAMMAR_CORRECT_SYSTEM,
@@ -17,12 +17,12 @@ import {
  *
  * @param text - The text to correct
  * @param ollamaOptions - Optional overrides for model, endpoint, timeout
- * @returns The corrected text (unchanged if already correct)
+ * @returns LLMResult with corrected text and metadata
  */
 export async function correctGrammar(
   text: string,
   ollamaOptions: OllamaCallOptions = {},
-): Promise<string> {
+): Promise<LLMResult> {
   return callOllama(GRAMMAR_CORRECT_SYSTEM, text, {
     temperature: 0.2,
     ...ollamaOptions,
@@ -40,13 +40,13 @@ export async function correctGrammar(
  * @param text - The text to translate
  * @param targetLanguage - Target language ('English', 'German', or 'Romanian')
  * @param ollamaOptions - Optional overrides for model, endpoint, timeout
- * @returns The translated text
+ * @returns LLMResult with translated text and metadata
  */
 export async function translateText(
   text: string,
   targetLanguage: SupportedLanguage,
   ollamaOptions: OllamaCallOptions = {},
-): Promise<string> {
+): Promise<LLMResult> {
   const systemPrompt = buildTranslateSystemPrompt(targetLanguage);
   return callOllama(systemPrompt, text, {
     temperature: 0.2,

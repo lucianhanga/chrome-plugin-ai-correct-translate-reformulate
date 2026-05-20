@@ -145,6 +145,130 @@ describe('ResultDisplay', () => {
     // There are no Replace / Append / Copy / Clear buttons.
     expect(within(container).queryByRole('button')).toBeNull();
   });
+
+  it('renders the metadata line (model, tokens, elapsed) when metadata is supplied', async () => {
+    const { ResultDisplay } = await import('../../src/popup/components/ResultDisplay.tsx');
+
+    const { container } = render(
+      <ResultDisplay
+        originalText="test"
+        resultText="result"
+        model="qwen3:14b"
+        totalTokens={142}
+        elapsedMs={2400}
+      />,
+    );
+
+    const meta = within(container).getByTestId('result-meta');
+    expect(meta).toHaveTextContent('qwen3:14b');
+    expect(meta).toHaveTextContent('142 tokens');
+    // 2400 ms is formatted as "2.4 s".
+    expect(meta).toHaveTextContent('2.4 s');
+  });
+
+  it('omits the metadata line entirely when no model is supplied', async () => {
+    const { ResultDisplay } = await import('../../src/popup/components/ResultDisplay.tsx');
+
+    const { container } = render(
+      <ResultDisplay originalText="test" resultText="result" />,
+    );
+
+    expect(within(container).queryByTestId('result-meta')).toBeNull();
+  });
+
+  it('drops the token segment when totalTokens is null but still shows model and time', async () => {
+    const { ResultDisplay } = await import('../../src/popup/components/ResultDisplay.tsx');
+
+    const { container } = render(
+      <ResultDisplay
+        originalText="test"
+        resultText="result"
+        model="qwen3:14b"
+        totalTokens={null}
+        elapsedMs={1500}
+      />,
+    );
+
+    const meta = within(container).getByTestId('result-meta');
+    expect(meta).toHaveTextContent('qwen3:14b');
+    expect(meta).not.toHaveTextContent('tokens');
+    expect(meta).toHaveTextContent('1.5 s');
+  });
+});
+
+// ============================================================
+// QuickAction -- provider-aware loading text and result metadata
+// ============================================================
+
+describe('QuickAction', () => {
+  it('shows "Processing with Ollama..." while a request is in flight when provider is ollama', async () => {
+    const { chromeMock } = await import('../mocks/chrome.ts');
+    // Keep the request pending so the loading indicator stays visible.
+    let resolveSend: ((value: unknown) => void) | undefined;
+    chromeMock.runtime.sendMessage.mockReturnValue(
+      new Promise((resolve) => { resolveSend = resolve; }),
+    );
+
+    const { QuickAction } = await import('../../src/popup/components/QuickAction.tsx');
+    const { container } = render(
+      <QuickAction defaultTargetLanguage="English" provider="ollama" />,
+    );
+
+    fireEvent.change(within(container).getByPlaceholderText(/Paste or type/i), {
+      target: { value: 'She dont know.' },
+    });
+    fireEvent.click(within(container).getByRole('button', { name: /^Correct$/i }));
+
+    expect(await within(container).findByText(/Processing with Ollama/i)).toBeInTheDocument();
+    resolveSend?.({ success: true, result: 'ok', model: 'qwen3:14b', totalTokens: 10, elapsedMs: 100 });
+  });
+
+  it('shows "Processing with OpenAI..." while a request is in flight when provider is openai', async () => {
+    const { chromeMock } = await import('../mocks/chrome.ts');
+    let resolveSend: ((value: unknown) => void) | undefined;
+    chromeMock.runtime.sendMessage.mockReturnValue(
+      new Promise((resolve) => { resolveSend = resolve; }),
+    );
+
+    const { QuickAction } = await import('../../src/popup/components/QuickAction.tsx');
+    const { container } = render(
+      <QuickAction defaultTargetLanguage="English" provider="openai" />,
+    );
+
+    fireEvent.change(within(container).getByPlaceholderText(/Paste or type/i), {
+      target: { value: 'She dont know.' },
+    });
+    fireEvent.click(within(container).getByRole('button', { name: /^Correct$/i }));
+
+    expect(await within(container).findByText(/Processing with OpenAI/i)).toBeInTheDocument();
+    resolveSend?.({ success: true, result: 'ok', model: 'gpt-5-nano', totalTokens: 10, elapsedMs: 100 });
+  });
+
+  it('renders the result metadata line after a successful correction', async () => {
+    const { chromeMock } = await import('../mocks/chrome.ts');
+    chromeMock.runtime.sendMessage.mockResolvedValue({
+      success: true,
+      result: 'She does not know.',
+      model: 'qwen3:14b',
+      totalTokens: 142,
+      elapsedMs: 2400,
+    });
+
+    const { QuickAction } = await import('../../src/popup/components/QuickAction.tsx');
+    const { container } = render(
+      <QuickAction defaultTargetLanguage="English" provider="ollama" />,
+    );
+
+    fireEvent.change(within(container).getByPlaceholderText(/Paste or type/i), {
+      target: { value: 'She dont know.' },
+    });
+    fireEvent.click(within(container).getByRole('button', { name: /^Correct$/i }));
+
+    const meta = await within(container).findByTestId('result-meta');
+    expect(meta).toHaveTextContent('qwen3:14b');
+    expect(meta).toHaveTextContent('142 tokens');
+    expect(meta).toHaveTextContent('2.4 s');
+  });
 });
 
 // ============================================================

@@ -2,7 +2,7 @@
 // Text area + action buttons for quick correction or translation from the popup.
 
 import React, { useState } from 'react';
-import type { SupportedLanguage } from '../../shared/types.ts';
+import type { LLMProvider, SupportedLanguage } from '../../shared/types.ts';
 import type {
   SuccessResponse,
   ErrorResponse,
@@ -14,15 +14,20 @@ import { ResultDisplay } from './ResultDisplay.tsx';
 
 interface QuickActionProps {
   defaultTargetLanguage: SupportedLanguage;
+  provider: LLMProvider;
 }
 
 interface ResultState {
   originalText: string;
   resultText: string;
+  model: string;
+  totalTokens: number | null;
+  elapsedMs: number;
 }
 
 export function QuickAction({
   defaultTargetLanguage,
+  provider,
 }: QuickActionProps): React.ReactElement {
   const [inputText, setInputText] = useState('');
   const [targetLanguage, setTargetLanguage] = useState<SupportedLanguage>(defaultTargetLanguage);
@@ -47,7 +52,13 @@ export function QuickAction({
       }) as ServiceWorkerResponse;
 
       if (isSuccessResponse(response)) {
-        setResult({ originalText: inputText, resultText: response.result });
+        setResult({
+          originalText: inputText,
+          resultText: response.result,
+          model: response.model,
+          totalTokens: response.totalTokens,
+          elapsedMs: response.elapsedMs,
+        });
       } else if (isErrorResponse(response)) {
         setError(response.error);
       } else {
@@ -75,7 +86,13 @@ export function QuickAction({
       }) as ServiceWorkerResponse;
 
       if (isSuccessResponse(response)) {
-        setResult({ originalText: inputText, resultText: response.result });
+        setResult({
+          originalText: inputText,
+          resultText: response.result,
+          model: response.model,
+          totalTokens: response.totalTokens,
+          elapsedMs: response.elapsedMs,
+        });
       } else if (isErrorResponse(response)) {
         setError(response.error);
       } else {
@@ -183,7 +200,9 @@ export function QuickAction({
             className="w-4 h-4 rounded-full border-2 border-[#313244] border-t-[#22c55e] animate-spin"
             aria-label="Loading"
           />
-          <span className="text-xs text-[#a6adc8]">Processing with Ollama...</span>
+          <span className="text-xs text-[#a6adc8]">
+            Processing with {provider === 'openai' ? 'OpenAI' : 'Ollama'}...
+          </span>
         </div>
       )}
 
@@ -204,6 +223,9 @@ export function QuickAction({
         <ResultDisplay
           originalText={result.originalText}
           resultText={result.resultText}
+          model={result.model}
+          totalTokens={result.totalTokens}
+          elapsedMs={result.elapsedMs}
         />
       )}
     </div>

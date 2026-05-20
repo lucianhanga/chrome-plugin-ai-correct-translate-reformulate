@@ -15,11 +15,14 @@ import { LLMError } from '../../src/shared/errors.ts';
 // Fetch Mock Helpers
 // ============================================================
 
-function mockFetchSuccess(content: string): ReturnType<typeof vi.fn> {
+function mockFetchSuccess(
+  content: string,
+  extra: { model?: string; usage?: { total_tokens?: number } } = {},
+): ReturnType<typeof vi.fn> {
   const fn = vi.fn().mockResolvedValue({
     ok: true,
     status: 200,
-    json: async () => ({ choices: [{ message: { content } }] }),
+    json: async () => ({ choices: [{ message: { content } }], ...extra }),
     text: async () => '',
   });
   vi.stubGlobal('fetch', fn);
@@ -59,22 +62,45 @@ describe('callOpenAI', () => {
   it('returns trimmed response content on HTTP 200 success', async () => {
     mockFetchSuccess('  Corrected text.  ');
     const result = await callOpenAI('sk-test', 'System prompt', 'input text', 'gpt-5-nano');
-    expect(result).toBe('Corrected text.');
+    expect(result.text).toBe('Corrected text.');
   });
 
-  it('returns empty string for empty user text without calling fetch', async () => {
+  it('returns an LLMResult with model, token count, and elapsed time', async () => {
+    mockFetchSuccess('Corrected text.', {
+      model: 'gpt-5-nano-2025',
+      usage: { total_tokens: 87 },
+    });
+    const result = await callOpenAI('sk-test', 'System prompt', 'input text', 'gpt-5-nano');
+    expect(result.text).toBe('Corrected text.');
+    expect(result.model).toBe('gpt-5-nano-2025');
+    expect(result.totalTokens).toBe(87);
+    expect(typeof result.elapsedMs).toBe('number');
+    expect(result.elapsedMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it('falls back to the requested model and null tokens when usage is absent', async () => {
+    mockFetchSuccess('Corrected text.');
+    const result = await callOpenAI('sk-test', 'System prompt', 'input text', 'gpt-5-nano');
+    expect(result.model).toBe('gpt-5-nano');
+    expect(result.totalTokens).toBeNull();
+  });
+
+  it('returns an empty-text LLMResult for empty user text without calling fetch', async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
     const result = await callOpenAI('sk-test', 'System prompt', '', 'gpt-5-nano');
-    expect(result).toBe('');
+    expect(result.text).toBe('');
+    expect(result.totalTokens).toBeNull();
+    expect(result.elapsedMs).toBe(0);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('returns empty string for whitespace-only user text without calling fetch', async () => {
+  it('returns an empty-text LLMResult for whitespace-only user text without calling fetch', async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
     const result = await callOpenAI('sk-test', 'System prompt', '   ', 'gpt-5-nano');
-    expect(result).toBe('');
+    expect(result.text).toBe('');
+    expect(result.totalTokens).toBeNull();
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -286,7 +312,7 @@ describe('createOpenAIClient', () => {
     mockFetchSuccess('adapter result');
     const client = createOpenAIClient({ apiKey: 'sk-test', model: 'gpt-5-nano' });
     const result = await client.call('system', 'user text', { model: 'gpt-5-nano' });
-    expect(result).toBe('adapter result');
+    expect(result.text).toBe('adapter result');
   });
 
   it('passes the per-call model through to the request body', async () => {

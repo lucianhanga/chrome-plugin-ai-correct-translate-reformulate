@@ -1,9 +1,15 @@
 // src/background/llm-client.ts
 // Provider-agnostic LLMClient interface and factory. Service-worker only.
 
-import type { ExtensionSettings } from '../shared/types.ts';
+import type { ExtensionSettings, LLMResult } from '../shared/types.ts';
 import { createOllamaClient } from './ollama-client.ts';
 import { createOpenAIClient } from './openai-client.ts';
+
+// ============================================================
+// Re-exports
+// ============================================================
+
+export type { LLMResult } from '../shared/types.ts';
 
 // ============================================================
 // Interface Types
@@ -29,14 +35,15 @@ export interface LLMHealthResult {
 
 export interface LLMClient {
   /**
-   * Sends a single non-streaming chat completion. Returns trimmed text.
+   * Sends a single non-streaming chat completion. Returns an LLMResult with
+   * the trimmed text plus metadata (model, totalTokens, elapsedMs).
    * Throws on failure with a sanitized message (never containing the API key).
    */
   call(
     systemPrompt: string,
     userText: string,
     options: LLMCallOptions,
-  ): Promise<string>;
+  ): Promise<LLMResult>;
 
   /**
    * Verifies the provider is reachable and the model/credential is usable.
