@@ -1,6 +1,6 @@
 // tests/unit/errors.test.ts
 import { describe, it, expect } from 'vitest';
-import { classifyError, getUserMessage, getErrorColor, ERROR_MESSAGES, ERROR_COLORS } from '../../src/shared/errors.ts';
+import { classifyError, getUserMessage, getErrorColor, ERROR_MESSAGES, ERROR_COLORS, LLMError } from '../../src/shared/errors.ts';
 import { COLORS } from '../../src/shared/constants.ts';
 
 describe('classifyError', () => {
@@ -35,6 +35,28 @@ describe('classifyError', () => {
     expect(classifyError('string error')).toBe('UNKNOWN_ERROR');
     expect(classifyError(null)).toBe('UNKNOWN_ERROR');
   });
+
+  it('classifies an LLMError structurally by its code (not by message text)', () => {
+    // The message text deliberately does not hint at the code -- classification
+    // must come from the structural `code` field on LLMError.
+    expect(classifyError(new LLMError('OPENAI_AUTH_FAILED', 'opaque (401)'))).toBe('OPENAI_AUTH_FAILED');
+    expect(classifyError(new LLMError('OPENAI_RATE_LIMITED', 'opaque (429)'))).toBe('OPENAI_RATE_LIMITED');
+    expect(classifyError(new LLMError('OPENAI_QUOTA_EXCEEDED', 'opaque (429)'))).toBe('OPENAI_QUOTA_EXCEEDED');
+    expect(classifyError(new LLMError('OPENAI_UNREACHABLE', 'opaque'))).toBe('OPENAI_UNREACHABLE');
+    expect(classifyError(new LLMError('REQUEST_TIMEOUT', 'opaque'))).toBe('REQUEST_TIMEOUT');
+    expect(classifyError(new LLMError('UNEXPECTED_RESPONSE', 'opaque'))).toBe('UNEXPECTED_RESPONSE');
+  });
+});
+
+describe('LLMError', () => {
+  it('is an Error subclass that carries an ErrorCode', () => {
+    const err = new LLMError('OPENAI_AUTH_FAILED', 'OpenAI auth failed (401)');
+    expect(err).toBeInstanceOf(Error);
+    expect(err).toBeInstanceOf(LLMError);
+    expect(err.code).toBe('OPENAI_AUTH_FAILED');
+    expect(err.name).toBe('LLMError');
+    expect(err.message).toBe('OpenAI auth failed (401)');
+  });
 });
 
 describe('getUserMessage', () => {
@@ -56,6 +78,16 @@ describe('getUserMessage', () => {
     const msg = getUserMessage('MODEL_NOT_FOUND');
     expect(msg).toContain('ollama pull');
   });
+
+  it('provides OpenAI-specific (not Ollama-flavoured) copy for the OpenAI error codes', () => {
+    expect(getUserMessage('OPENAI_AUTH_FAILED')).toMatch(/OpenAI/);
+    expect(getUserMessage('OPENAI_AUTH_FAILED')).toMatch(/key/i);
+    expect(getUserMessage('OPENAI_RATE_LIMITED')).toMatch(/rate limit/i);
+    expect(getUserMessage('OPENAI_QUOTA_EXCEEDED')).toMatch(/quota|billing/i);
+    expect(getUserMessage('OPENAI_UNREACHABLE')).toMatch(/Cannot reach OpenAI/i);
+    // OpenAI failure copy must not give Ollama advice.
+    expect(getUserMessage('OPENAI_UNREACHABLE')).not.toContain('ollama serve');
+  });
 });
 
 describe('getErrorColor', () => {
@@ -69,6 +101,13 @@ describe('getErrorColor', () => {
     expect(getErrorColor('REQUEST_TIMEOUT')).toBe(COLORS.WARNING);
     expect(getErrorColor('EMPTY_INPUT')).toBe(COLORS.WARNING);
     expect(getErrorColor('INPUT_TOO_LONG')).toBe(COLORS.WARNING);
+  });
+
+  it('colors OpenAI errors: rate-limit is a retryable warning, the rest are failures', () => {
+    expect(getErrorColor('OPENAI_RATE_LIMITED')).toBe(COLORS.WARNING);
+    expect(getErrorColor('OPENAI_AUTH_FAILED')).toBe(COLORS.FAILURE);
+    expect(getErrorColor('OPENAI_QUOTA_EXCEEDED')).toBe(COLORS.FAILURE);
+    expect(getErrorColor('OPENAI_UNREACHABLE')).toBe(COLORS.FAILURE);
   });
 
   it('covers all error codes', () => {

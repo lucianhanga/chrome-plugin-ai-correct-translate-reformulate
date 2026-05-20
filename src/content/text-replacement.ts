@@ -4,8 +4,8 @@
 
 import { showCopiedToast } from './overlay.ts';
 
-// Separator inserted between the original text and an appended translation.
-const APPEND_SEPARATOR = ' ';
+// Appended after replaced or inserted result text, so a new line follows it.
+const RESULT_SUFFIX = '\n';
 
 // ============================================================
 // Captured selection target
@@ -26,6 +26,21 @@ export type CapturedTarget =
  * Must be called while the original selection is still live.
  */
 export function captureSelectionTarget(): CapturedTarget {
+  // A selection inside a <textarea>/<input> is not reported by
+  // window.getSelection(); it lives on the focused element's
+  // selectionStart/selectionEnd, so check the active element first.
+  const active = document.activeElement;
+  if (
+    active instanceof HTMLTextAreaElement ||
+    (active instanceof HTMLInputElement && isTextInput(active))
+  ) {
+    const start = active.selectionStart ?? 0;
+    const end = active.selectionEnd ?? 0;
+    if (end > start) {
+      return { kind: 'input', element: active, start, end };
+    }
+  }
+
   const selection = window.getSelection();
   if (!selection || selection.rangeCount === 0) return { kind: 'none' };
 
@@ -70,11 +85,11 @@ export async function applyResult(resultText: string): Promise<void> {
  */
 export async function replaceCaptured(target: CapturedTarget, text: string): Promise<void> {
   if (target.kind === 'input') {
-    replaceRangeInInput(target.element, target.start, target.end, text);
+    replaceRangeInInput(target.element, target.start, target.end, text + RESULT_SUFFIX);
     return;
   }
   if (target.kind === 'contenteditable') {
-    insertIntoCapturedRange(target.range, text, 'replace');
+    insertIntoCapturedRange(target.range, text + RESULT_SUFFIX, 'replace');
     return;
   }
   await copyToClipboard(text);
@@ -86,12 +101,12 @@ export async function replaceCaptured(target: CapturedTarget, text: string): Pro
  */
 export async function appendCaptured(target: CapturedTarget, text: string): Promise<void> {
   if (target.kind === 'input') {
-    // Insert after the original selection; the original text is kept.
-    replaceRangeInInput(target.element, target.end, target.end, APPEND_SEPARATOR + text);
+    // Insert immediately after the original selection; the original is kept.
+    replaceRangeInInput(target.element, target.end, target.end, text + RESULT_SUFFIX);
     return;
   }
   if (target.kind === 'contenteditable') {
-    insertIntoCapturedRange(target.range, APPEND_SEPARATOR + text, 'append');
+    insertIntoCapturedRange(target.range, text + RESULT_SUFFIX, 'append');
     return;
   }
   await copyToClipboard(text);

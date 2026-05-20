@@ -2,8 +2,10 @@
 // Playwright configuration for the Correct & Translate Chrome extension E2E test suite.
 //
 // Design decisions:
-// - headless: false is REQUIRED. Chrome MV3 extensions only load in a real, non-headless
-//   Chromium instance launched with a persistent context and extension flags.
+// - Runs headless via Chrome's new headless mode. The browser is launched with
+//   headless:false + the --headless=new arg: Chrome runs windowless and the new
+//   headless mode loads MV3 extensions, while Playwright's own headless:true
+//   path -- which does not load extensions in a persistent context -- is avoided.
 // - No parallelism (workers: 1). The extension ID is resolved once at process startup.
 //   Parallel workers would each spin up their own browser context with a potentially
 //   different extension ID, breaking any cached ID assumptions.
@@ -50,15 +52,16 @@ export default defineConfig({
   retries: 0,
   reporter: [['list'], ['html', { open: 'never', outputFolder: 'playwright-report' }]],
   use: {
-    // Headed mode is REQUIRED for MV3 extensions.
+    // headless:false + the --headless=new arg below -- windowless, extensions load.
     headless: false,
-    // Slow-down makes UI transitions visible during development/debugging.
-    // Set to 0 for CI.
+    // slowMo can be raised to watch UI transitions when debugging.
     launchOptions: {
       slowMo: 0,
       args: [
         `--disable-extensions-except=${DIST_TEST_PATH}`,
         `--load-extension=${DIST_TEST_PATH}`,
+        // New headless mode: windowless, and unlike old headless it loads extensions.
+        '--headless=new',
         // Suppress Chrome's "Chrome is being controlled by automated test software" bar.
         '--disable-infobars',
         // Required for extension service workers to function in automated mode.

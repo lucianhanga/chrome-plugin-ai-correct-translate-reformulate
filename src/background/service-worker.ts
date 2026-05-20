@@ -200,5 +200,5 @@ async function processContextMenuAction(
     throw new Error('targetLanguage is required for translate action');
   }
 
-  return translateText(text, targetLanguage, settings.sourceLanguageOverride, ollamaOptions);
+  return translateText(text, targetLanguage, ollamaOptions);
 }

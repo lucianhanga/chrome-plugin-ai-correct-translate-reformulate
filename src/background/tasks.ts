@@ -34,21 +34,20 @@ export async function correctGrammar(
 // ============================================================
 
 /**
- * Translate text to targetLanguage. If sourceLang is null, auto-detect source.
+ * Translate text to targetLanguage. The source language is always auto-detected
+ * by the model.
  *
  * @param text - The text to translate
  * @param targetLanguage - Target language ('English', 'German', or 'Romanian')
- * @param sourceLanguage - Source language, or null to auto-detect
  * @param ollamaOptions - Optional overrides for model, endpoint, timeout
  * @returns The translated text
  */
 export async function translateText(
   text: string,
   targetLanguage: SupportedLanguage,
-  sourceLanguage: SupportedLanguage | null = null,
   ollamaOptions: OllamaCallOptions = {},
 ): Promise<string> {
-  const systemPrompt = buildTranslateSystemPrompt(targetLanguage, sourceLanguage);
+  const systemPrompt = buildTranslateSystemPrompt(targetLanguage);
   return callOllama(systemPrompt, text, {
     temperature: 0.2,
     ...ollamaOptions,

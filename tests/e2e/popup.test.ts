@@ -6,15 +6,19 @@
 //   - Status indicator reflects Ollama health (connected, unreachable, model-missing)
 //   - Quick Action: Correct button sends a request and displays a non-empty result
 //   - Quick Action: Translate button sends a request and displays a non-empty result
-//   - Quick Action: translate result offers Copy + Replace + Append + Clear
-//   - Quick Action: Replace puts the translation into the input textarea
-//   - Quick Action: Append keeps the original and adds the translation after it
+//   - Quick Action: the result auto-copies to the clipboard and shows a confirmation
 //   - Quick Action: error state is shown when the configured endpoint is unreachable
 //   - Quick Action: character limit guard prevents submission and shows counter
 //   - Quick Action: empty input prevents submission
 //   - Settings section: opens/closes via toggle
 //   - Settings section: Save persists values and refreshes status
-//   - Result display: Copy button and clear (Reject) button
+//   - Settings section: OpenAI provider toggle, API key field, consent dialog
+//
+// Result panel note (current behavior): the popup result panel (ResultDisplay)
+// has NO Replace / Append / Copy / Clear buttons. The result is copied to the
+// clipboard automatically when it appears, and a confirmation element
+// (data-testid="copied-hint") is shown. data-testid="result-text" and
+// data-testid="original-text" still exist.
 //
 // Translate flow note (post-rollback): translation auto-detects the source
 // language during the model call. The popup has no language-detection or
@@ -199,17 +203,9 @@ test.describe('Popup: Quick Action -- Correct', () => {
     await expect(popup.locator('[data-testid="original-text"]')).toContainText(inputText);
   });
 
-  test('result display has a Copy button', async ({ openPopup }) => {
-    const popup = await openPopup();
-    await popup.locator('textarea').fill('She dont know nothing about them projects.');
-    await popup.getByRole('button', { name: /^Correct$/i }).click();
-
-    const resultContainer = popup.locator('[data-testid="result-text"]');
-    await resultContainer.waitFor({ state: 'visible', timeout: 120_000 });
-    await expect(popup.getByRole('button', { name: /Copy/i })).toBeVisible();
-  });
-
-  test('result display has a clear/reject button that removes the result', async ({ openPopup }) => {
+  test('result display auto-copies and shows the copied confirmation', async ({ openPopup }) => {
+    // The popup result panel has no action buttons. When a result appears it is
+    // copied to the clipboard automatically and a confirmation is shown.
     const popup = await openPopup();
     await popup.locator('textarea').fill('She dont know nothing about them projects.');
     await popup.getByRole('button', { name: /^Correct$/i }).click();
@@ -217,11 +213,13 @@ test.describe('Popup: Quick Action -- Correct', () => {
     const resultContainer = popup.locator('[data-testid="result-text"]');
     await resultContainer.waitFor({ state: 'visible', timeout: 120_000 });
 
-    const clearBtn = popup.getByRole('button', { name: /Clear|Reject|Dismiss|Remove/i });
-    if (await clearBtn.count() > 0) {
-      await clearBtn.first().click();
-      await expect(resultContainer).not.toBeVisible();
-    }
+    // The auto-copy confirmation appears.
+    await expect(popup.locator('[data-testid="copied-hint"]')).toBeVisible({ timeout: 5_000 });
+    // There are no Replace / Append / Copy / Clear buttons in the result panel.
+    await expect(popup.locator('[data-testid="result-replace"]')).toHaveCount(0);
+    await expect(popup.locator('[data-testid="result-append"]')).toHaveCount(0);
+    await expect(popup.getByRole('button', { name: /^Copy$/i })).toHaveCount(0);
+    await expect(popup.getByRole('button', { name: /^Clear$/i })).toHaveCount(0);
   });
 
   test('character counter shows correct count and goes red over limit', async ({ openPopup }) => {
@@ -320,9 +318,10 @@ test.describe('Popup: Quick Action -- Translate', () => {
     expect((resultText ?? '').trim().length).toBeGreaterThan(0);
   });
 
-  test('translate result shows Copy, Replace, Append and Clear actions', async ({ openPopup }) => {
-    // The rolled-back translate flow keeps Replace/Append plus the auto-copy.
-    // In the popup the result panel shows Copy + Replace + Append + Clear.
+  test('translate result auto-copies and shows the copied confirmation (no action buttons)', async ({ openPopup }) => {
+    // The popup result panel has no Replace / Append / Copy / Clear buttons.
+    // The translation is copied to the clipboard automatically and a
+    // confirmation element is shown.
     const popup = await openPopup();
     await popup.locator('textarea').fill('Hello, how are you today?');
     await popup.getByRole('button', { name: /^Translate$/i }).click();
@@ -330,37 +329,17 @@ test.describe('Popup: Quick Action -- Translate', () => {
     const resultContainer = popup.locator('[data-testid="result-text"]');
     await resultContainer.waitFor({ state: 'visible', timeout: 120_000 });
 
-    await expect(popup.locator('[data-testid="result-replace"]')).toBeVisible();
-    await expect(popup.locator('[data-testid="result-append"]')).toBeVisible();
-    await expect(popup.getByRole('button', { name: /^Copy$/i })).toBeVisible();
-    await expect(popup.getByRole('button', { name: /^Clear$/i })).toBeVisible();
+    await expect(popup.locator('[data-testid="copied-hint"]')).toBeVisible({ timeout: 5_000 });
+    await expect(popup.locator('[data-testid="result-replace"]')).toHaveCount(0);
+    await expect(popup.locator('[data-testid="result-append"]')).toHaveCount(0);
+    await expect(popup.getByRole('button', { name: /^Copy$/i })).toHaveCount(0);
+    await expect(popup.getByRole('button', { name: /^Clear$/i })).toHaveCount(0);
   });
 
-  test('Replace puts the translation into the input textarea and clears the result', async ({ openPopup }) => {
-    const popup = await openPopup();
-    const textarea = popup.locator('textarea');
+  test('translate result keeps the original text visible alongside the translation', async ({ openPopup }) => {
     // German source text with the default target language (English) so the
     // translation is clearly different from the input. The source language is
     // auto-detected by the model -- no detection/confirm step in the popup.
-    const originalText = 'Hallo, wie geht es dir heute?';
-    await textarea.fill(originalText);
-    await popup.getByRole('button', { name: /^Translate$/i }).click();
-
-    const resultContainer = popup.locator('[data-testid="result-text"]');
-    await resultContainer.waitFor({ state: 'visible', timeout: 120_000 });
-    const translation = ((await resultContainer.textContent()) ?? '').trim();
-    expect(translation.length).toBeGreaterThan(0);
-
-    await popup.locator('[data-testid="result-replace"]').click();
-
-    // Replace sets the textarea to the translation and dismisses the result panel.
-    await expect(resultContainer).not.toBeVisible();
-    const valueAfterReplace = (await textarea.inputValue()).trim();
-    expect(valueAfterReplace.length).toBeGreaterThan(0);
-    expect(valueAfterReplace).not.toBe(originalText);
-  });
-
-  test('Append keeps the original text and adds the translation after it', async ({ openPopup }) => {
     const popup = await openPopup();
     const textarea = popup.locator('textarea');
     const originalText = 'Hallo, wie geht es dir heute?';
@@ -372,14 +351,10 @@ test.describe('Popup: Quick Action -- Translate', () => {
     const translation = ((await resultContainer.textContent()) ?? '').trim();
     expect(translation.length).toBeGreaterThan(0);
 
-    await popup.locator('[data-testid="result-append"]').click();
-
-    // Append keeps the original and adds the translation after it; the result
-    // panel is dismissed.
-    await expect(resultContainer).not.toBeVisible();
-    const valueAfterAppend = await textarea.inputValue();
-    expect(valueAfterAppend.startsWith(originalText)).toBe(true);
-    expect(valueAfterAppend.length).toBeGreaterThan(originalText.length);
+    // The original text is shown in its own block; the input textarea is unchanged
+    // (the result panel no longer mutates the textarea).
+    await expect(popup.locator('[data-testid="original-text"]')).toContainText(originalText);
+    expect(await textarea.inputValue()).toBe(originalText);
   });
 });
 
@@ -431,24 +406,97 @@ test.describe('Popup: Settings section', () => {
     await popup.getByRole('button', { name: /Save Settings/i }).click();
     await expect(popup.locator('text=Settings saved.')).toBeVisible({ timeout: 5_000 });
   });
+});
 
-  test('source language quick-set buttons are visible', async ({ openPopup }) => {
+// ---------------------------------------------------------------------------
+// Suite: Settings section -- OpenAI provider UI
+//
+// These tests exercise the settings UI only (provider toggle, API-key field,
+// consent dialog). No real OpenAI network call is made.
+// ---------------------------------------------------------------------------
+
+test.describe('Popup: Settings section -- OpenAI provider', () => {
+  test('settings section shows the Ollama and OpenAI provider toggle buttons', async ({ openPopup }) => {
     const popup = await openPopup();
     await popup.locator('[data-testid="settings-toggle"]').click();
-    await expect(popup.getByRole('button', { name: /^Auto$/i })).toBeVisible();
-    await expect(popup.getByRole('button', { name: /^English$/i })).toBeVisible();
-    await expect(popup.getByRole('button', { name: /^German$/i })).toBeVisible();
-    await expect(popup.getByRole('button', { name: /^Romanian$/i })).toBeVisible();
+    await expect(popup.getByRole('button', { name: /Ollama \(local\)/i })).toBeVisible();
+    await expect(popup.getByRole('button', { name: /^OpenAI$/i })).toBeVisible();
   });
 
-  test('selecting a source language quick-set highlights that button', async ({ openPopup }) => {
+  test('switching to OpenAI shows a one-time data-egress consent dialog', async ({ openPopup }) => {
     const popup = await openPopup();
     await popup.locator('[data-testid="settings-toggle"]').click();
-    await popup.getByRole('button', { name: /^German$/i }).click();
-    const germanBtn = popup.getByRole('button', { name: /^German$/i });
-    // Use toHaveCSS (which retries automatically) rather than evaluate+getComputedStyle
-    // (which does not retry and can race against React re-render).
-    // #22c55e converts to rgb(34, 197, 94).
-    await expect(germanBtn).toHaveCSS('background-color', 'rgb(34, 197, 94)');
+    await popup.getByRole('button', { name: /^OpenAI$/i }).click();
+
+    // The consent dialog gates the switch.
+    await expect(popup.getByRole('dialog')).toBeVisible();
+    await expect(popup.locator('text=Data egress notice')).toBeVisible();
+  });
+
+  test('cancelling the consent dialog leaves the provider on Ollama', async ({ openPopup }) => {
+    const popup = await openPopup();
+    await popup.locator('[data-testid="settings-toggle"]').click();
+    await popup.getByRole('button', { name: /^OpenAI$/i }).click();
+    await popup.getByRole('dialog').waitFor({ state: 'visible' });
+    await popup.getByRole('button', { name: /^Cancel$/i }).click();
+
+    await expect(popup.getByRole('dialog')).toHaveCount(0);
+    // Still on Ollama: the Ollama model select is present, no OpenAI key field.
+    await expect(popup.locator('[data-testid="model-select"]')).toBeVisible();
+    await expect(popup.locator('input[type="password"]')).toHaveCount(0);
+  });
+
+  test('confirming consent reveals the masked OpenAI API key field', async ({ openPopup }) => {
+    const popup = await openPopup();
+    await popup.locator('[data-testid="settings-toggle"]').click();
+    await popup.getByRole('button', { name: /^OpenAI$/i }).click();
+    await popup.getByRole('dialog').waitFor({ state: 'visible' });
+    await popup.getByRole('button', { name: /I understand, use OpenAI/i }).click();
+
+    await expect(popup.getByRole('dialog')).toHaveCount(0);
+    // The API key field is a masked password input, with a Validate button.
+    await expect(popup.locator('input[type="password"]')).toBeVisible();
+    await expect(popup.getByRole('button', { name: /Validate/i })).toBeVisible();
+    // The OpenAI model selector lists the available models.
+    await expect(popup.locator('option[value="gpt-5-nano"]').first()).toBeAttached();
+    await expect(popup.locator('option[value="gpt-5.4-nano"]').first()).toBeAttached();
+  });
+
+  test('persistent "OpenAI" badge appears in the popup header when OpenAI is the active provider', async ({
+    openPopup,
+    extensionId,
+    context,
+  }) => {
+    // Persist provider=openai (with consent already acknowledged) via SAVE_SETTINGS.
+    const configPage = await context.newPage();
+    await configPage.goto(`chrome-extension://${extensionId}/popup.html`);
+    await configPage.waitForSelector('h1', { timeout: 8_000 });
+    await configPage.evaluate(async () => {
+      await chrome.runtime.sendMessage({
+        type: 'SAVE_SETTINGS',
+        payload: {
+          settings: {
+            provider: 'openai',
+            openaiConsentAcknowledged: true,
+            openaiApiKey: 'sk-test-placeholder',
+          },
+        },
+      });
+    });
+    await configPage.close();
+
+    // A fresh popup reads settings on mount and shows the persistent badge.
+    const popup = await openPopup();
+    await expect(popup.locator('h1')).toContainText('Correct & Translate');
+    // The persistent "OpenAI" badge sits next to the title in the header.
+    await expect(popup.getByText('OpenAI', { exact: true })).toBeVisible({ timeout: 8_000 });
+
+    // Restore the Ollama provider so subsequent tests are not affected.
+    await popup.evaluate(async () => {
+      await chrome.runtime.sendMessage({
+        type: 'SAVE_SETTINGS',
+        payload: { settings: { provider: 'ollama' } },
+      });
+    });
   });
 });

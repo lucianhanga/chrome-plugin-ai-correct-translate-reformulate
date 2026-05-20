@@ -49,13 +49,13 @@ describe('correctGrammar', () => {
 });
 
 describe('translateText', () => {
-  it('uses auto-detect prompt when sourceLanguage is null', async () => {
+  it('uses auto-detect prompt', async () => {
     const { callOllama } = await import('../../src/background/ollama-client.ts');
     const { translateText } = await import('../../src/background/tasks.ts');
     vi.mocked(callOllama).mockResolvedValue('Translated text.');
 
-    await translateText('Hello', 'Romanian', null);
-    const expectedPrompt = buildTranslateSystemPrompt('Romanian', null);
+    await translateText('Hello', 'Romanian');
+    const expectedPrompt = buildTranslateSystemPrompt('Romanian');
     expect(callOllama).toHaveBeenCalledWith(
       expectedPrompt,
       'Hello',
@@ -63,33 +63,20 @@ describe('translateText', () => {
     );
   });
 
-  it('uses explicit source prompt when sourceLanguage is provided', async () => {
-    const { callOllama } = await import('../../src/background/ollama-client.ts');
-    const { translateText } = await import('../../src/background/tasks.ts');
-    vi.mocked(callOllama).mockResolvedValue('Hallo.');
-
-    await translateText('Hello', 'German', 'English');
-    const expectedPrompt = buildTranslateSystemPrompt('German', 'English');
-    expect(callOllama).toHaveBeenCalledWith(
-      expectedPrompt,
-      'Hello',
-      expect.objectContaining({ temperature: 0.2 }),
-    );
-  });
-
-  it('defaults sourceLanguage to null (auto-detect)', async () => {
+  it('prompt instructs auto-detect for all supported target languages', async () => {
     const { callOllama } = await import('../../src/background/ollama-client.ts');
     const { translateText } = await import('../../src/background/tasks.ts');
     vi.mocked(callOllama).mockResolvedValue('ok');
 
-    // Called with only 2 args -- should default sourceLanguage to null
-    await translateText('text', 'English');
-    const expectedPrompt = buildTranslateSystemPrompt('English', null);
-    expect(callOllama).toHaveBeenCalledWith(
-      expectedPrompt,
-      'text',
-      expect.any(Object),
-    );
+    for (const lang of ['English', 'German', 'Romanian'] as const) {
+      await translateText('text', lang);
+      const expectedPrompt = buildTranslateSystemPrompt(lang);
+      expect(callOllama).toHaveBeenCalledWith(
+        expectedPrompt,
+        'text',
+        expect.any(Object),
+      );
+    }
   });
 
   it('returns the translated text', async () => {
@@ -97,7 +84,7 @@ describe('translateText', () => {
     const { translateText } = await import('../../src/background/tasks.ts');
     vi.mocked(callOllama).mockResolvedValue('Soarele straluceste.');
 
-    const result = await translateText('The sun is shining.', 'Romanian', null);
+    const result = await translateText('The sun is shining.', 'Romanian');
     expect(result).toBe('Soarele straluceste.');
   });
 });

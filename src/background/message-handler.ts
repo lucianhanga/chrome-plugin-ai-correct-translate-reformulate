@@ -8,6 +8,7 @@ import {
   isHealthCheckRequest,
   isGetSettingsRequest,
   isSaveSettingsRequest,
+  isValidateOpenAIKeyRequest,
   isValidMessageType,
 } from '../shared/messages.ts';
 import { validateTextInput } from '../shared/validators.ts';
@@ -15,6 +16,9 @@ import { classifyError, getUserMessage } from '../shared/errors.ts';
 import { getSettings, saveSettings } from '../shared/storage.ts';
 import { correctGrammar, translateText } from './tasks.ts';
 import { checkOllamaHealth } from './ollama-client.ts';
+import { getActiveClient } from './llm-client.ts';
+import { checkOpenAIHealth } from './openai-client.ts';
+import { GRAMMAR_CORRECT_SYSTEM, buildTranslateSystemPrompt } from '../shared/prompts.ts';
 
 // ============================================================
 // Error Helper
@@ -58,10 +62,23 @@ export async function handleMessage(message: unknown): Promise<ServiceWorkerResp
       }
 
       const settings = await getSettings();
-      const result = await correctGrammar(message.payload.text, {
-        model: settings.model,
-        endpoint: settings.ollamaEndpoint,
-      });
+
+      let result: string;
+      if (settings.provider === 'openai') {
+        // Route through the provider-agnostic client for OpenAI.
+        const client = getActiveClient(settings);
+        result = await client.call(
+          GRAMMAR_CORRECT_SYSTEM,
+          message.payload.text,
+          { model: settings.openaiModel, temperature: 0.2 },
+        );
+      } else {
+        // Ollama path: delegate to correctGrammar so existing tests remain valid.
+        result = await correctGrammar(message.payload.text, {
+          model: settings.model,
+          endpoint: settings.ollamaEndpoint,
+        });
+      }
 
       return { success: true, result };
     }
@@ -77,12 +94,27 @@ export async function handleMessage(message: unknown): Promise<ServiceWorkerResp
       }
 
       const settings = await getSettings();
-      const result = await translateText(
-        message.payload.text,
-        message.payload.targetLanguage,
-        message.payload.sourceLanguage,
-        { model: settings.model, endpoint: settings.ollamaEndpoint },
-      );
+
+      let result: string;
+      if (settings.provider === 'openai') {
+        // Route through the provider-agnostic client for OpenAI.
+        const client = getActiveClient(settings);
+        const systemPrompt = buildTranslateSystemPrompt(
+          message.payload.targetLanguage,
+        );
+        result = await client.call(
+          systemPrompt,
+          message.payload.text,
+          { model: settings.openaiModel, temperature: 0.2 },
+        );
+      } else {
+        // Ollama path: delegate to translateText so existing tests remain valid.
+        result = await translateText(
+          message.payload.text,
+          message.payload.targetLanguage,
+          { model: settings.model, endpoint: settings.ollamaEndpoint },
+        );
+      }
 
       return { success: true, result };
     }
@@ -90,6 +122,15 @@ export async function handleMessage(message: unknown): Promise<ServiceWorkerResp
     // HEALTH_CHECK
     if (isHealthCheckRequest(message)) {
       const settings = await getSettings();
+      if (settings.provider === 'openai') {
+        const health = await checkOpenAIHealth(settings.openaiApiKey, settings.openaiModel);
+        return {
+          success: true,
+          reachable: health.reachable,
+          modelFound: health.modelFound,
+          error: health.error,
+        };
+      }
       const health = await checkOllamaHealth(settings.ollamaEndpoint, settings.model);
       return {
         success: true,
@@ -102,13 +143,36 @@ export async function handleMessage(message: unknown): Promise<ServiceWorkerResp
     // GET_SETTINGS
     if (isGetSettingsRequest(message)) {
       const settings = await getSettings();
-      return { success: true, settings };
+      // Redact the API key: the popup only needs to know whether a key is set.
+      // The real key never leaves the service worker except in outbound API requests.
+      const redactedSettings = {
+        ...settings,
+        openaiApiKey: settings.openaiApiKey.length > 0 ? '__SET__' : '',
+      };
+      return { success: true, settings: redactedSettings };
     }
 
     // SAVE_SETTINGS
     if (isSaveSettingsRequest(message)) {
-      await saveSettings(message.payload.settings);
+      const incoming = message.payload.settings;
+      // If the popup sends the redaction sentinel, do not overwrite the stored key.
+      const toSave: Partial<typeof incoming> = { ...incoming };
+      if (toSave.openaiApiKey === '__SET__') {
+        delete toSave.openaiApiKey;
+      }
+      await saveSettings(toSave);
       return { success: true };
+    }
+
+    // VALIDATE_OPENAI_KEY
+    if (isValidateOpenAIKeyRequest(message)) {
+      const health = await checkOpenAIHealth(message.payload.key, message.payload.model);
+      return {
+        success: true,
+        valid: health.reachable && health.modelFound,
+        modelFound: health.modelFound,
+        error: health.error,
+      };
     }
 
     return errorResponse('INVALID_MESSAGE');

@@ -1,52 +1,52 @@
 // src/popup/components/ResultDisplay.tsx
 // Displays the result of a quick action (correction or translation).
-// Shows original and result text with Copy, Clear, and -- for translations --
-// Replace and Append actions.
+// The result is copied to the clipboard automatically; there are no action buttons.
 
-import React, { useState } from 'react';
-import type { ActionType } from '../../shared/types.ts';
+import React, { useEffect, useState } from 'react';
 
 interface ResultDisplayProps {
   originalText: string;
   resultText: string;
-  onClear: () => void;
-  /** Which quick action produced this result. Defaults to 'correct'. */
-  action?: ActionType;
-  /** Translate only: replace the input text with the translation. */
-  onReplace?: () => void;
-  /** Translate only: append the translation after the original text. */
-  onAppend?: () => void;
 }
 
 export function ResultDisplay({
   originalText,
   resultText,
-  onClear,
-  action = 'correct',
-  onReplace,
-  onAppend,
 }: ResultDisplayProps): React.ReactElement {
   const [copied, setCopied] = useState(false);
 
-  const handleCopy = (): void => {
-    navigator.clipboard.writeText(resultText).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1800);
-    }).catch(() => {
-      // Fallback copy using textarea
-      const ta = document.createElement('textarea');
-      ta.value = resultText;
-      ta.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0;';
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand('copy');
-      ta.remove();
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1800);
-    });
-  };
-
-  const showTranslateActions = action === 'translate' && onReplace !== undefined && onAppend !== undefined;
+  // Copy the result to the clipboard automatically when it appears.
+  useEffect(() => {
+    let cancelled = false;
+    const markCopied = (): void => {
+      if (!cancelled) setCopied(true);
+    };
+    const fallbackCopy = (): void => {
+      // Best-effort copy for contexts where the async clipboard API is unavailable.
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = resultText;
+        ta.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0;';
+        document.body.appendChild(ta);
+        ta.select();
+        if (typeof document.execCommand === 'function') {
+          document.execCommand('copy');
+        }
+        ta.remove();
+      } catch {
+        // Ignore -- copy is best-effort.
+      }
+      markCopied();
+    };
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(resultText).then(markCopied).catch(fallbackCopy);
+    } else {
+      fallbackCopy();
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [resultText]);
 
   return (
     <div className="flex flex-col gap-3 mt-2">
@@ -82,65 +82,15 @@ export function ResultDisplay({
         </div>
       </div>
 
-      {/* Actions */}
-      <div className="flex flex-col gap-2">
-        {showTranslateActions && (
-          <div className="flex gap-2">
-            <button
-              data-testid="result-replace"
-              onClick={onReplace}
-              className="
-                flex-1 py-1.5 rounded-md text-sm font-semibold
-                bg-[#22c55e] text-[#1e1e2e]
-                hover:brightness-110 active:brightness-90
-                transition-all duration-100
-                focus:outline-none focus:ring-2 focus:ring-[#22c55e] focus:ring-offset-1 focus:ring-offset-[#1e1e2e]
-              "
-            >
-              Replace
-            </button>
-            <button
-              data-testid="result-append"
-              onClick={onAppend}
-              className="
-                flex-1 py-1.5 rounded-md text-sm font-semibold
-                border border-[#45475a] text-[#cdd6f4]
-                hover:bg-[#313244]
-                transition-colors duration-100
-                focus:outline-none focus:ring-2 focus:ring-[#585b70] focus:ring-offset-1 focus:ring-offset-[#1e1e2e]
-              "
-            >
-              Append
-            </button>
-          </div>
-        )}
-        <div className="flex gap-2">
-          <button
-            onClick={handleCopy}
-            className="
-              flex-1 py-1.5 rounded-md text-sm font-semibold
-              border border-[#22c55e] text-[#22c55e]
-              hover:bg-[#22c55e] hover:text-[#1e1e2e]
-              transition-colors duration-100
-              focus:outline-none focus:ring-2 focus:ring-[#22c55e] focus:ring-offset-1 focus:ring-offset-[#1e1e2e]
-            "
-          >
-            {copied ? 'Copied!' : 'Copy'}
-          </button>
-          <button
-            onClick={onClear}
-            className="
-              flex-1 py-1.5 rounded-md text-sm font-semibold
-              border border-[#45475a] text-[#a6adc8]
-              hover:bg-[#313244] hover:text-[#cdd6f4]
-              transition-colors duration-100
-              focus:outline-none focus:ring-2 focus:ring-[#585b70] focus:ring-offset-1 focus:ring-offset-[#1e1e2e]
-            "
-          >
-            Clear
-          </button>
-        </div>
-      </div>
+      {/* Auto-copy confirmation */}
+      {copied && (
+        <span
+          data-testid="copied-hint"
+          className="text-[11px] font-semibold text-[#22c55e]"
+        >
+          Copied to clipboard
+        </span>
+      )}
     </div>
   );
 }

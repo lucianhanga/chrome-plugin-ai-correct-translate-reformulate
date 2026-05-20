@@ -3,16 +3,25 @@
 //
 // What is covered:
 //   - Loading overlay appears in the correct state (correct and translate)
-//   - Result overlay: shows original text, result text, Accept and Reject buttons
-//   - Accept in a textarea replaces the selected text (observed via .value)
-//   - Accept in a non-editable context: "Copied!" toast appears
-//   - Reject dismisses the overlay without modifying the page
+//   - Result overlay: renders for correction and translation (same result UI)
+//   - Result overlay footer: Replace / Append / Close buttons exist
+//   - Replace in a textarea overwrites the selected text (observed via .value)
+//   - Append in a textarea inserts the result after the selection
+//   - Close dismisses the overlay without modifying the page
 //   - Keyboard: Escape dismisses the overlay
-//   - Keyboard: Enter accepts the result
+//   - Keyboard: Enter triggers the primary action (Replace)
+//   - The result auto-copies to the clipboard (a "Copied!" toast appears)
 //   - Error overlay: shown when Ollama returns an error code
 //   - Only one overlay exists at a time (singleton)
 //   - Translate result overlay: renders for a SHOW_RESULT with action 'translate'
 //     and is dismissible via Escape / Close
+//
+// Overlay result UI note (current behavior):
+//   Correction and translation now use the SAME result overlay. The overlay
+//   auto-copies the result to the clipboard and its footer has three buttons:
+//   Replace (data-ct-replace), Append (data-ct-append), Close (data-ct-close).
+//   The old correct-flow Accept / Reject buttons no longer exist. Replace is
+//   the primary keyboard action (Enter); Escape closes the overlay.
 //
 // Translate flow note (post-rollback):
 //   The translate context-menu path runs the translate-and-show-result flow
@@ -278,10 +287,16 @@ test.describe('Overlay: message-driven rendering', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Suite: Overlay behavior -- Accept and Reject
+// Suite: Overlay behavior -- Replace / Append / Close
+//
+// The overlay uses a closed Shadow DOM, so its footer buttons cannot be clicked
+// through Playwright selectors. These tests drive the overlay via the keyboard
+// (Escape closes, Enter triggers the primary action Replace) and assert on
+// observable side effects (overlay removal, textarea value changes, the
+// auto-copy toast).
 // ---------------------------------------------------------------------------
 
-test.describe('Overlay: Accept and Reject behavior', () => {
+test.describe('Overlay: Replace / Append / Close behavior', () => {
   test('Escape key dismisses the overlay', async ({ context, testServerBaseUrl }) => {
     const page = await context.newPage();
     await page.goto(`${testServerBaseUrl}/test-page.html`);
@@ -324,7 +339,7 @@ test.describe('Overlay: Accept and Reject behavior', () => {
     );
   });
 
-  test('Enter key accepts the result when body is focused (not inside a form field)', async ({ context, testServerBaseUrl }) => {
+  test('Enter key triggers the primary action (Replace) when body is focused', async ({ context, testServerBaseUrl }) => {
     const page = await context.newPage();
     await page.goto(`${testServerBaseUrl}/test-page.html`);
 
@@ -342,7 +357,7 @@ test.describe('Overlay: Accept and Reject behavior', () => {
 
     await waitForContentScript(sw, realTabId);
 
-    // Focus document.body so Enter triggers the accept path (not a form field handler).
+    // Focus document.body so Enter triggers the primary action (not a form field handler).
     await page.evaluate(() => document.body.focus());
 
     await sendMessageToPage(sw, realTabId, {
@@ -360,8 +375,8 @@ test.describe('Overlay: Accept and Reject behavior', () => {
       { timeout: 5_000 },
     );
 
-    // Enter should accept -- onAccept calls applyResult, which copies to clipboard
-    // for non-editable context and dismisses the overlay.
+    // Enter triggers the primary action (Replace). With no captured editable
+    // target it falls back to the clipboard, then the overlay is dismissed.
     await page.keyboard.press('Enter');
 
     await page.waitForFunction(
@@ -371,7 +386,7 @@ test.describe('Overlay: Accept and Reject behavior', () => {
     );
   });
 
-  test('Escape on result overlay rejects (removes overlay without modifying textarea)', async ({ context, testServerBaseUrl }) => {
+  test('Escape on result overlay closes it without modifying the textarea', async ({ context, testServerBaseUrl }) => {
     const page = await context.newPage();
     await page.goto(`${testServerBaseUrl}/test-page.html`);
 
@@ -422,7 +437,75 @@ test.describe('Overlay: Accept and Reject behavior', () => {
     expect(valueAfterEscape).toBe(originalValue);
   });
 
-  test('Copied toast appears after Enter-accept on non-editable text', async ({ context, testServerBaseUrl }) => {
+  test('Enter-triggered Replace overwrites the selected text in a textarea', async ({ context, testServerBaseUrl }) => {
+    // Replace acts on the selection captured at SHOW_LOADING time. We therefore
+    // send SHOW_LOADING (captures the textarea selection) before SHOW_RESULT,
+    // mirroring the real correct/translate flow. Enter then triggers Replace,
+    // which overwrites the selected range with the result text (+ a newline).
+    const page = await context.newPage();
+    await page.goto(`${testServerBaseUrl}/test-page.html`);
+
+    const sw = context.serviceWorkers().find((w) => w.url().includes('service-worker.js'));
+    if (!sw) throw new Error('Service worker not found');
+
+    const realTabId = await sw.evaluate(async (): Promise<number> => {
+      const tabs = await chrome.tabs.query({ active: true });
+      return tabs[0]?.id ?? -1;
+    });
+
+    await sw.evaluate(async (tid: number) => {
+      await chrome.scripting.executeScript({ target: { tabId: tid }, files: ['content.js'] });
+    }, realTabId);
+
+    await waitForContentScript(sw, realTabId);
+
+    // Select the full text of the editable textarea.
+    const textarea = page.locator('[data-testid="textarea-field"]');
+    await textarea.click();
+    await textarea.selectText();
+    const originalValue = await textarea.inputValue();
+
+    // SHOW_LOADING captures the live selection for the later Replace/Append.
+    await sendMessageToPage(sw, realTabId, {
+      type: 'SHOW_LOADING',
+      payload: { action: 'correct', originalText: originalValue },
+    });
+    await page.waitForFunction(
+      () => document.querySelector('[data-ct-overlay-host]') !== null,
+      undefined,
+      { timeout: 5_000 },
+    );
+
+    const replacement = 'She does not know anything about the project.';
+    await sendMessageToPage(sw, realTabId, {
+      type: 'SHOW_RESULT',
+      payload: {
+        action: 'correct',
+        originalText: originalValue,
+        resultText: replacement,
+      },
+    });
+    await page.waitForFunction(
+      () => document.querySelector('[data-ct-overlay-host]') !== null,
+      undefined,
+      { timeout: 5_000 },
+    );
+
+    // Enter triggers Replace (the primary action). It overwrites the selection
+    // with the result text plus a trailing newline, then dismisses the overlay.
+    await page.keyboard.press('Enter');
+    await page.waitForFunction(
+      () => document.querySelector('[data-ct-overlay-host]') === null,
+      undefined,
+      { timeout: 5_000 },
+    );
+
+    const valueAfterReplace = await textarea.inputValue();
+    expect(valueAfterReplace.trim()).toBe(replacement);
+    expect(valueAfterReplace).not.toBe(originalValue);
+  });
+
+  test('non-editable selection: the result overlay renders and dismisses via Escape', async ({ context, testServerBaseUrl }) => {
     const page = await context.newPage();
     await page.goto(`${testServerBaseUrl}/test-page.html`);
 
@@ -441,6 +524,9 @@ test.describe('Overlay: Accept and Reject behavior', () => {
     await waitForContentScript(sw, realTabId);
     await page.evaluate(() => document.body.focus());
 
+    // No SHOW_LOADING precedes this, so no editable selection is captured --
+    // the result is treated as non-editable: the overlay shows only Close
+    // (Replace/Append are not rendered), and the result is still auto-copied.
     await sendMessageToPage(sw, realTabId, {
       type: 'SHOW_RESULT',
       payload: {
@@ -456,11 +542,10 @@ test.describe('Overlay: Accept and Reject behavior', () => {
       { timeout: 5_000 },
     );
 
-    await page.keyboard.press('Enter');
-
-    // showCopiedToast() appends a [data-ct-toast-host] element to document.body.
+    // Escape dismisses the overlay.
+    await page.keyboard.press('Escape');
     await page.waitForFunction(
-      () => document.querySelector('[data-ct-toast-host]') !== null,
+      () => document.querySelector('[data-ct-overlay-host]') === null,
       undefined,
       { timeout: 5_000 },
     );

@@ -17,8 +17,8 @@ export interface OverlayResultData {
   originalText: string;
   resultText: string;
   targetLanguage?: string;
-  /** Translate only: whether Replace/Append can be applied (selection is editable). */
-  editable?: boolean;
+  /** Whether the selection can be edited in place (Replace/Append apply). */
+  editable: boolean;
 }
 
 export interface OverlayErrorData {
@@ -27,13 +27,11 @@ export interface OverlayErrorData {
 }
 
 export interface OverlayCallbacks {
-  /** Grammar-correction primary action: replace the selection with the result. */
-  onAccept?: (resultText: string) => void;
-  /** Translate: replace the original text with the translation. */
-  onReplace?: (resultText: string) => void;
-  /** Translate: append the translation immediately after the original text. */
-  onAppend?: (resultText: string) => void;
-  /** Dismiss the overlay without applying anything. */
+  /** Replace the original selection with the result text. */
+  onReplace: (resultText: string) => void;
+  /** Append the result text immediately after the original. */
+  onAppend: (resultText: string) => void;
+  /** Close the overlay without applying anything. */
   onReject: () => void;
 }
 
@@ -178,82 +176,59 @@ function renderResult(
   resultDiv.appendChild(originalBlock);
   resultDiv.appendChild(resultBlock);
 
-  // Translate results are auto-copied to the clipboard; show a hint.
-  if (data.action === 'translate') {
-    const hint = document.createElement('div');
-    hint.className = 'ct-copied-hint';
-    hint.textContent = 'Copied to clipboard';
-    resultDiv.appendChild(hint);
-  }
+  // The result is auto-copied to the clipboard; show a confirmation.
+  const hint = document.createElement('div');
+  hint.className = 'ct-copied-hint';
+  hint.textContent = 'Copied to clipboard';
+  resultDiv.appendChild(hint);
 
   body.appendChild(resultDiv);
 
-  // Actions footer
+  // Actions footer. Replace/Append apply only when the selection is editable;
+  // for a non-editable selection only Close is shown (the result is still
+  // auto-copied to the clipboard).
   const actionsDiv = document.createElement('div');
   actionsDiv.className = 'ct-overlay-actions';
 
-  if (data.action === 'translate') {
-    if (data.editable === true) {
-      const replaceBtn = document.createElement('button');
-      replaceBtn.className = 'ct-btn ct-btn-accept';
-      replaceBtn.textContent = 'Replace';
-      replaceBtn.setAttribute('data-ct-replace', '');
-      const doReplace = (): void => {
-        callbacks.onReplace?.(data.resultText);
-        cleanup();
-      };
-      replaceBtn.addEventListener('click', doReplace);
-
-      const appendBtn = document.createElement('button');
-      appendBtn.className = 'ct-btn ct-btn-secondary';
-      appendBtn.textContent = 'Append';
-      appendBtn.setAttribute('data-ct-append', '');
-      appendBtn.addEventListener('click', () => {
-        callbacks.onAppend?.(data.resultText);
-        cleanup();
-      });
-
-      actionsDiv.appendChild(replaceBtn);
-      actionsDiv.appendChild(appendBtn);
-      primaryKeyAction = doReplace;
-    } else {
-      primaryKeyAction = null;
-    }
-
-    const closeBtn = document.createElement('button');
-    closeBtn.className = 'ct-btn ct-btn-dismiss';
-    closeBtn.textContent = 'Close';
-    closeBtn.addEventListener('click', () => {
-      callbacks.onReject();
-      cleanup();
-    });
-    actionsDiv.appendChild(closeBtn);
-  } else {
-    // Grammar correction: Accept / Reject
-    const acceptBtn = document.createElement('button');
-    acceptBtn.className = 'ct-btn ct-btn-accept';
-    acceptBtn.textContent = 'Accept';
-    acceptBtn.setAttribute('data-ct-accept', '');
-    const doAccept = (): void => {
-      callbacks.onAccept?.(data.resultText);
+  if (data.editable) {
+    const replaceBtn = document.createElement('button');
+    replaceBtn.className = 'ct-btn ct-btn-accept';
+    replaceBtn.textContent = 'Replace';
+    replaceBtn.setAttribute('data-ct-replace', '');
+    const doReplace = (): void => {
+      callbacks.onReplace(data.resultText);
       cleanup();
     };
-    acceptBtn.addEventListener('click', doAccept);
+    replaceBtn.addEventListener('click', doReplace);
 
-    const rejectBtn = document.createElement('button');
-    rejectBtn.className = 'ct-btn ct-btn-reject';
-    rejectBtn.textContent = 'Reject';
-    rejectBtn.addEventListener('click', () => {
-      callbacks.onReject();
+    const appendBtn = document.createElement('button');
+    appendBtn.className = 'ct-btn ct-btn-secondary';
+    appendBtn.textContent = 'Append';
+    appendBtn.setAttribute('data-ct-append', '');
+    appendBtn.addEventListener('click', () => {
+      callbacks.onAppend(data.resultText);
       cleanup();
     });
 
-    actionsDiv.appendChild(acceptBtn);
-    actionsDiv.appendChild(rejectBtn);
-    primaryKeyAction = doAccept;
+    actionsDiv.appendChild(replaceBtn);
+    actionsDiv.appendChild(appendBtn);
+    primaryKeyAction = doReplace;
+  } else {
+    primaryKeyAction = null;
   }
 
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'ct-btn ct-btn-dismiss';
+  closeBtn.textContent = 'Close';
+  closeBtn.setAttribute('data-ct-close', '');
+  closeBtn.addEventListener('click', () => {
+    callbacks.onReject();
+    cleanup();
+  });
+
+  actionsDiv.appendChild(closeBtn);
   overlay.appendChild(actionsDiv);
+
   setupKeyboardHandler(callbacks.onReject);
 }
 
@@ -442,7 +417,7 @@ function buildResultTitle(data: OverlayResultData): string {
 
 function focusPrimaryButton(root: ShadowRoot): void {
   const btn = root.querySelector(
-    '[data-ct-accept], [data-ct-replace]',
+    '[data-ct-replace], [data-ct-close]',
   ) as HTMLButtonElement | null;
   btn?.focus();
 }

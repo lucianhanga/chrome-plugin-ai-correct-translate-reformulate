@@ -54,10 +54,14 @@ export const test = base.extend<ExtensionFixtures>({
     );
 
     const ctx = await chromium.launchPersistentContext(userDataDir, {
+      // headless:false + --headless=new: Chrome runs windowless via its new
+      // headless mode, which loads MV3 extensions. Playwright's headless:true
+      // path does not load extensions in a persistent context, so it stays false.
       headless: false,
       args: [
         `--disable-extensions-except=${DIST_TEST_PATH}`,
         `--load-extension=${DIST_TEST_PATH}`,
+        '--headless=new',
         '--disable-infobars',
         '--no-sandbox',
       ],

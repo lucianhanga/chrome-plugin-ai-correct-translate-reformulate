@@ -2,7 +2,7 @@
 // Type-safe storage abstraction over chrome.storage.local.
 
 import type { ExtensionSettings } from './types.ts';
-import { DEFAULT_SETTINGS } from './constants.ts';
+import { DEFAULT_SETTINGS, AVAILABLE_OPENAI_MODELS, DEFAULT_OPENAI_MODEL } from './constants.ts';
 
 // ============================================================
 // Storage Schema
@@ -23,7 +23,24 @@ export interface StorageSchema {
 export async function getSettings(): Promise<ExtensionSettings> {
   const result = await chrome.storage.local.get('settings');
   const stored = result['settings'] as Partial<ExtensionSettings> | undefined;
-  return { ...DEFAULT_SETTINGS, ...(stored ?? {}) };
+  const merged = { ...DEFAULT_SETTINGS, ...(stored ?? {}) };
+
+  // Defense-in-depth: coerce new fields to valid values in case of corrupted
+  // or hand-edited storage. The spread does not validate value types.
+  if (merged.provider !== 'ollama' && merged.provider !== 'openai') {
+    merged.provider = 'ollama';
+  }
+  if (!AVAILABLE_OPENAI_MODELS.includes(merged.openaiModel)) {
+    merged.openaiModel = DEFAULT_OPENAI_MODEL;
+  }
+  if (typeof merged.openaiApiKey !== 'string') {
+    merged.openaiApiKey = '';
+  }
+  if (typeof merged.openaiConsentAcknowledged !== 'boolean') {
+    merged.openaiConsentAcknowledged = false;
+  }
+
+  return merged;
 }
 
 // ============================================================

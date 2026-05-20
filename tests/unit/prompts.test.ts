@@ -2,8 +2,6 @@
 import { describe, it, expect } from 'vitest';
 import {
   GRAMMAR_CORRECT_SYSTEM,
-  buildTranslateAutoSystemPrompt,
-  buildTranslateExplicitSystemPrompt,
   buildTranslateSystemPrompt,
 } from '../../src/shared/prompts.ts';
 
@@ -35,59 +33,26 @@ describe('GRAMMAR_CORRECT_SYSTEM', () => {
   });
 });
 
-describe('buildTranslateAutoSystemPrompt', () => {
+describe('buildTranslateSystemPrompt', () => {
   it('produces a prompt that mentions the target language', () => {
-    const prompt = buildTranslateAutoSystemPrompt('Romanian');
+    const prompt = buildTranslateSystemPrompt('Romanian');
     expect(prompt).toContain('Romanian');
   });
 
   it('instructs to auto-detect source language', () => {
-    const prompt = buildTranslateAutoSystemPrompt('German');
+    const prompt = buildTranslateSystemPrompt('German');
     expect(prompt).toContain('Detect');
   });
 
   it('contains the clean-output constraint', () => {
-    const prompt = buildTranslateAutoSystemPrompt('English');
+    const prompt = buildTranslateSystemPrompt('English');
     expect(prompt).toContain('Output ONLY the translated text');
     expect(prompt).toContain('no explanations');
   });
 
   it('handles all three target languages', () => {
-    expect(buildTranslateAutoSystemPrompt('English')).toContain('English');
-    expect(buildTranslateAutoSystemPrompt('German')).toContain('German');
-    expect(buildTranslateAutoSystemPrompt('Romanian')).toContain('Romanian');
-  });
-});
-
-describe('buildTranslateExplicitSystemPrompt', () => {
-  it('includes both source and target language', () => {
-    const prompt = buildTranslateExplicitSystemPrompt('English', 'Romanian');
-    expect(prompt).toContain('English');
-    expect(prompt).toContain('Romanian');
-  });
-
-  it('contains the clean-output constraint', () => {
-    const prompt = buildTranslateExplicitSystemPrompt('German', 'English');
-    expect(prompt).toContain('Output ONLY the translated text');
-  });
-
-  it('does not say auto-detect when explicit source given', () => {
-    const prompt = buildTranslateExplicitSystemPrompt('Romanian', 'German');
-    expect(prompt).not.toContain('Detect');
-  });
-});
-
-describe('buildTranslateSystemPrompt', () => {
-  it('uses auto-detect prompt when sourceLanguage is null', () => {
-    const prompt = buildTranslateSystemPrompt('Romanian', null);
-    expect(prompt).toContain('Detect');
-    expect(prompt).toContain('Romanian');
-  });
-
-  it('uses explicit prompt when sourceLanguage is provided', () => {
-    const prompt = buildTranslateSystemPrompt('German', 'English');
-    expect(prompt).not.toContain('Detect');
-    expect(prompt).toContain('English');
-    expect(prompt).toContain('German');
+    expect(buildTranslateSystemPrompt('English')).toContain('English');
+    expect(buildTranslateSystemPrompt('German')).toContain('German');
+    expect(buildTranslateSystemPrompt('Romanian')).toContain('Romanian');
   });
 });

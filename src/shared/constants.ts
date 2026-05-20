@@ -1,7 +1,7 @@
 // src/shared/constants.ts
 // Shared constants used across extension contexts.
 
-import type { SupportedLanguage, ExtensionSettings } from './types.ts';
+import type { SupportedLanguage, ExtensionSettings, OpenAIModel } from './types.ts';
 
 // ============================================================
 // Supported Languages
@@ -40,6 +40,17 @@ export const OLLAMA_PARAMS = {
 } as const;
 
 // ============================================================
+// OpenAI Defaults
+// ============================================================
+
+export const OPENAI_API_BASE = 'https://api.openai.com';
+export const DEFAULT_OPENAI_MODEL: OpenAIModel = 'gpt-5-nano';
+export const AVAILABLE_OPENAI_MODELS: readonly OpenAIModel[] = [
+  'gpt-5.4-nano',
+  'gpt-5-nano',
+] as const;
+
+// ============================================================
 // Timeouts
 // ============================================================
 
@@ -60,7 +71,10 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   ollamaEndpoint: DEFAULT_OLLAMA_ENDPOINT,
   model: DEFAULT_MODEL,
   defaultTargetLanguage: 'English',
-  sourceLanguageOverride: null,
+  provider: 'ollama',
+  openaiModel: DEFAULT_OPENAI_MODEL,
+  openaiApiKey: '',
+  openaiConsentAcknowledged: false,
 };
 
 // ============================================================

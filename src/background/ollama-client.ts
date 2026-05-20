@@ -2,6 +2,7 @@
 // Fetch-based Ollama client for the Chrome extension service worker.
 // Only the service worker calls Ollama -- never content scripts or the popup.
 
+import type { LLMClient, LLMHealthResult } from './llm-client.ts';
 import type { OllamaCallOptions, OllamaHealthResult } from '../shared/types.ts';
 import {
   DEFAULT_MODEL,
@@ -152,4 +153,29 @@ export async function checkOllamaHealth(
     const msg = error instanceof Error ? error.message : String(error);
     return { reachable: false, modelFound: false, error: msg };
   }
+}
+
+// ============================================================
+// LLMClient Adapter
+// ============================================================
+
+/**
+ * Wraps the lower-level callOllama / checkOllamaHealth functions in the
+ * provider-agnostic LLMClient interface. The existing functions are unchanged;
+ * this is a thin, pure adapter with no new behavior.
+ */
+export function createOllamaClient(cfg: { endpoint: string }): LLMClient {
+  return {
+    call: (system, user, opts): Promise<string> => {
+      const callOpts: OllamaCallOptions = {
+        endpoint: cfg.endpoint,
+        model: opts.model,
+      };
+      if (opts.timeoutMs !== undefined) callOpts.timeoutMs = opts.timeoutMs;
+      if (opts.temperature !== undefined) callOpts.temperature = opts.temperature;
+      return callOllama(system, user, callOpts);
+    },
+    healthCheck: (model): Promise<LLMHealthResult> =>
+      checkOllamaHealth(cfg.endpoint, model),
+  };
 }

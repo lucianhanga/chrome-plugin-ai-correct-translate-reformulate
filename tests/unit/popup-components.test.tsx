@@ -4,8 +4,8 @@
 
 // @vitest-environment jsdom
 
-import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'vitest';
-import { render, fireEvent, within, cleanup } from '@testing-library/react';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
+import { render, fireEvent, within, waitFor, cleanup } from '@testing-library/react';
 import * as matchers from '@testing-library/jest-dom/matchers';
 import '@testing-library/jest-dom/vitest'; // augments vitest Assertion with jest-dom matchers
 import { expect as vitestExpect } from 'vitest';
@@ -126,7 +126,6 @@ describe('ResultDisplay', () => {
       <ResultDisplay
         originalText="She dont know."
         resultText="She does not know."
-        onClear={() => undefined}
       />,
     );
 
@@ -134,35 +133,17 @@ describe('ResultDisplay', () => {
     expect(within(container).getByText('She does not know.')).toBeInTheDocument();
   });
 
-  it('renders Copy and Clear buttons', async () => {
+  it('auto-copies the result and shows the copied confirmation (no action buttons)', async () => {
     const { ResultDisplay } = await import('../../src/popup/components/ResultDisplay.tsx');
 
     const { container } = render(
-      <ResultDisplay
-        originalText="test"
-        resultText="result"
-        onClear={() => undefined}
-      />,
+      <ResultDisplay originalText="test" resultText="result" />,
     );
 
-    expect(within(container).getByRole('button', { name: /copy/i })).toBeInTheDocument();
-    expect(within(container).getByRole('button', { name: /clear/i })).toBeInTheDocument();
-  });
-
-  it('calls onClear when Clear is clicked', async () => {
-    const { ResultDisplay } = await import('../../src/popup/components/ResultDisplay.tsx');
-
-    let cleared = false;
-    const { container } = render(
-      <ResultDisplay
-        originalText="test"
-        resultText="result"
-        onClear={() => { cleared = true; }}
-      />,
-    );
-
-    fireEvent.click(within(container).getByRole('button', { name: /clear/i }));
-    expect(cleared).toBe(true);
+    // The result is copied automatically; a confirmation is shown.
+    expect(within(container).getByTestId('copied-hint')).toBeInTheDocument();
+    // There are no Replace / Append / Copy / Clear buttons.
+    expect(within(container).queryByRole('button')).toBeNull();
   });
 });
 
@@ -189,6 +170,172 @@ describe('StatusIndicator', () => {
 });
 
 // ============================================================
+// SettingsSection -- provider toggle, OpenAI key field, consent dialog
+// ============================================================
+
+describe('SettingsSection', () => {
+  const baseSettings = {
+    ollamaEndpoint: 'http://localhost:11434',
+    model: 'qwen3:14b',
+    defaultTargetLanguage: 'English' as const,
+    provider: 'ollama' as const,
+    openaiModel: 'gpt-5-nano' as const,
+    openaiApiKey: '',
+    openaiConsentAcknowledged: false,
+  };
+
+  it('renders the Ollama and OpenAI provider toggle buttons', async () => {
+    const { SettingsSection } = await import('../../src/popup/components/SettingsSection.tsx');
+    const { container } = render(
+      <SettingsSection settings={baseSettings} onSaved={() => undefined} />,
+    );
+    expect(within(container).getByRole('button', { name: /Ollama \(local\)/i })).toBeInTheDocument();
+    expect(within(container).getByRole('button', { name: /^OpenAI$/i })).toBeInTheDocument();
+  });
+
+  it('shows Ollama fields by default and no OpenAI API key field', async () => {
+    const { SettingsSection } = await import('../../src/popup/components/SettingsSection.tsx');
+    const { container } = render(
+      <SettingsSection settings={baseSettings} onSaved={() => undefined} />,
+    );
+    expect(within(container).getByTestId('model-select')).toBeInTheDocument();
+    expect(container.querySelector('input[type="password"]')).toBeNull();
+  });
+
+  it('shows the consent dialog when switching to OpenAI without prior acknowledgement', async () => {
+    const { SettingsSection } = await import('../../src/popup/components/SettingsSection.tsx');
+    const { container } = render(
+      <SettingsSection settings={baseSettings} onSaved={() => undefined} />,
+    );
+    fireEvent.click(within(container).getByRole('button', { name: /^OpenAI$/i }));
+    // The data-egress consent dialog gates the switch.
+    expect(within(container).getByRole('dialog')).toBeInTheDocument();
+    expect(within(container).getByText(/Data egress notice/i)).toBeInTheDocument();
+    // The OpenAI key field is not shown yet -- the switch has not been confirmed.
+    expect(container.querySelector('input[type="password"]')).toBeNull();
+  });
+
+  it('cancelling the consent dialog leaves the provider on Ollama', async () => {
+    const { SettingsSection } = await import('../../src/popup/components/SettingsSection.tsx');
+    const { container } = render(
+      <SettingsSection settings={baseSettings} onSaved={() => undefined} />,
+    );
+    fireEvent.click(within(container).getByRole('button', { name: /^OpenAI$/i }));
+    fireEvent.click(within(container).getByRole('button', { name: /^Cancel$/i }));
+    expect(within(container).queryByRole('dialog')).toBeNull();
+    // Still on Ollama: the Ollama model select is present, no key field.
+    expect(within(container).getByTestId('model-select')).toBeInTheDocument();
+    expect(container.querySelector('input[type="password"]')).toBeNull();
+  });
+
+  it('confirming the consent dialog reveals the OpenAI model and masked key field', async () => {
+    const { SettingsSection } = await import('../../src/popup/components/SettingsSection.tsx');
+    const { container } = render(
+      <SettingsSection settings={baseSettings} onSaved={() => undefined} />,
+    );
+    fireEvent.click(within(container).getByRole('button', { name: /^OpenAI$/i }));
+    fireEvent.click(
+      within(container).getByRole('button', { name: /I understand, use OpenAI/i }),
+    );
+    expect(within(container).queryByRole('dialog')).toBeNull();
+    // The API key field is a password input (masked).
+    const keyField = container.querySelector('input[type="password"]');
+    expect(keyField).not.toBeNull();
+    // The Validate button accompanies the key field.
+    expect(within(container).getByRole('button', { name: /Validate/i })).toBeInTheDocument();
+  });
+
+  it('does not show the consent dialog when consent was already acknowledged', async () => {
+    const { SettingsSection } = await import('../../src/popup/components/SettingsSection.tsx');
+    const { container } = render(
+      <SettingsSection
+        settings={{ ...baseSettings, openaiConsentAcknowledged: true }}
+        onSaved={() => undefined}
+      />,
+    );
+    fireEvent.click(within(container).getByRole('button', { name: /^OpenAI$/i }));
+    // No dialog -- switch happens immediately.
+    expect(within(container).queryByRole('dialog')).toBeNull();
+    expect(container.querySelector('input[type="password"]')).not.toBeNull();
+  });
+
+  it('starts on the OpenAI provider when settings.provider is openai', async () => {
+    const { SettingsSection } = await import('../../src/popup/components/SettingsSection.tsx');
+    const { container } = render(
+      <SettingsSection
+        settings={{ ...baseSettings, provider: 'openai', openaiConsentAcknowledged: true }}
+        onSaved={() => undefined}
+      />,
+    );
+    expect(container.querySelector('input[type="password"]')).not.toBeNull();
+  });
+
+  it('shows a "key is saved" hint when a redacted key sentinel is present', async () => {
+    const { SettingsSection } = await import('../../src/popup/components/SettingsSection.tsx');
+    const { container } = render(
+      <SettingsSection
+        settings={{
+          ...baseSettings,
+          provider: 'openai',
+          openaiConsentAcknowledged: true,
+          openaiApiKey: '__SET__',
+        }}
+        onSaved={() => undefined}
+      />,
+    );
+    expect(within(container).getByText(/A key is saved/i)).toBeInTheDocument();
+  });
+
+  it('sends a SAVE_SETTINGS message when Save Settings is clicked', async () => {
+    const { chromeMock } = await import('../mocks/chrome.ts');
+    chromeMock.runtime.sendMessage.mockResolvedValue({ success: true });
+
+    const { SettingsSection } = await import('../../src/popup/components/SettingsSection.tsx');
+    const onSaved = vi.fn();
+    const { container } = render(
+      <SettingsSection settings={baseSettings} onSaved={onSaved} />,
+    );
+    fireEvent.click(within(container).getByRole('button', { name: /Save Settings/i }));
+
+    await waitFor(() => {
+      expect(chromeMock.runtime.sendMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'SAVE_SETTINGS' }),
+      );
+    });
+  });
+
+  it('sends a VALIDATE_OPENAI_KEY message when a typed key is validated', async () => {
+    const { chromeMock } = await import('../mocks/chrome.ts');
+    chromeMock.runtime.sendMessage.mockResolvedValue({
+      success: true,
+      valid: true,
+      modelFound: true,
+      error: null,
+    });
+
+    const { SettingsSection } = await import('../../src/popup/components/SettingsSection.tsx');
+    const { container } = render(
+      <SettingsSection
+        settings={{ ...baseSettings, provider: 'openai', openaiConsentAcknowledged: true }}
+        onSaved={() => undefined}
+      />,
+    );
+    const keyField = container.querySelector('input[type="password"]') as HTMLInputElement;
+    fireEvent.change(keyField, { target: { value: 'sk-typed-key' } });
+    fireEvent.click(within(container).getByRole('button', { name: /Validate/i }));
+
+    await waitFor(() => {
+      expect(chromeMock.runtime.sendMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'VALIDATE_OPENAI_KEY',
+          payload: expect.objectContaining({ key: 'sk-typed-key' }),
+        }),
+      );
+    });
+  });
+});
+
+// ============================================================
 // Popup root (smoke test)
 // ============================================================
 
@@ -202,7 +349,6 @@ describe('Popup', () => {
         ollamaEndpoint: 'http://localhost:11434',
         model: 'qwen3.6:35b-a3b',
         defaultTargetLanguage: 'English',
-        sourceLanguageOverride: null,
       },
     });
 

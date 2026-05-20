@@ -10,14 +10,27 @@ export type SupportedLanguage = 'English' | 'German' | 'Romanian';
 export type ActionType = 'correct' | 'translate';
 
 // ============================================================
+// Provider Types
+// ============================================================
+
+export type LLMProvider = 'ollama' | 'openai';
+
+export type OpenAIModel = 'gpt-5.4-nano' | 'gpt-5-nano';
+
+// ============================================================
 // Extension Settings
 // ============================================================
 
 export interface ExtensionSettings {
   ollamaEndpoint: string;
-  model: string;
+  model: string;                        // Ollama model
   defaultTargetLanguage: SupportedLanguage;
-  sourceLanguageOverride: SupportedLanguage | null;
+
+  // Provider selection
+  provider: LLMProvider;                // discriminator; default 'ollama'
+  openaiModel: OpenAIModel;             // default 'gpt-5-nano'
+  openaiApiKey: string;                 // default '' (empty = not configured)
+  openaiConsentAcknowledged: boolean;   // one-time egress consent flag; default false
 }
 
 // ============================================================
@@ -32,7 +45,11 @@ export type ErrorCode =
   | 'INPUT_TOO_LONG'
   | 'INVALID_MESSAGE'
   | 'UNEXPECTED_RESPONSE'
-  | 'UNKNOWN_ERROR';
+  | 'UNKNOWN_ERROR'
+  | 'OPENAI_AUTH_FAILED'
+  | 'OPENAI_RATE_LIMITED'
+  | 'OPENAI_QUOTA_EXCEEDED'
+  | 'OPENAI_UNREACHABLE';
 
 // ============================================================
 // Ollama API Types (internal -- not exposed to content scripts)

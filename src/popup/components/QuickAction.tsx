@@ -2,7 +2,7 @@
 // Text area + action buttons for quick correction or translation from the popup.
 
 import React, { useState } from 'react';
-import type { SupportedLanguage, ActionType } from '../../shared/types.ts';
+import type { SupportedLanguage } from '../../shared/types.ts';
 import type {
   SuccessResponse,
   ErrorResponse,
@@ -14,18 +14,15 @@ import { ResultDisplay } from './ResultDisplay.tsx';
 
 interface QuickActionProps {
   defaultTargetLanguage: SupportedLanguage;
-  sourceLanguageOverride: SupportedLanguage | null;
 }
 
 interface ResultState {
   originalText: string;
   resultText: string;
-  action: ActionType;
 }
 
 export function QuickAction({
   defaultTargetLanguage,
-  sourceLanguageOverride,
 }: QuickActionProps): React.ReactElement {
   const [inputText, setInputText] = useState('');
   const [targetLanguage, setTargetLanguage] = useState<SupportedLanguage>(defaultTargetLanguage);
@@ -50,7 +47,7 @@ export function QuickAction({
       }) as ServiceWorkerResponse;
 
       if (isSuccessResponse(response)) {
-        setResult({ originalText: inputText, resultText: response.result, action: 'correct' });
+        setResult({ originalText: inputText, resultText: response.result });
       } else if (isErrorResponse(response)) {
         setError(response.error);
       } else {
@@ -64,8 +61,7 @@ export function QuickAction({
     }
   };
 
-  // Translate. The source language is auto-detected by the model during the
-  // call, unless a source-language override is configured in settings.
+  // Translate. The source language is always auto-detected by the model.
   const handleTranslate = async (): Promise<void> => {
     if (isEmpty || overLimit || loading) return;
     setLoading(true);
@@ -75,11 +71,11 @@ export function QuickAction({
     try {
       const response = await chrome.runtime.sendMessage({
         type: 'TRANSLATE',
-        payload: { text: inputText, targetLanguage, sourceLanguage: sourceLanguageOverride },
+        payload: { text: inputText, targetLanguage },
       }) as ServiceWorkerResponse;
 
       if (isSuccessResponse(response)) {
-        setResult({ originalText: inputText, resultText: response.result, action: 'translate' });
+        setResult({ originalText: inputText, resultText: response.result });
       } else if (isErrorResponse(response)) {
         setError(response.error);
       } else {
@@ -91,27 +87,6 @@ export function QuickAction({
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleClear = (): void => {
-    setResult(null);
-    setError(null);
-  };
-
-  // Translate result: replace the input text with the translation.
-  const handleReplace = (): void => {
-    if (!result) return;
-    setInputText(result.resultText);
-    setResult(null);
-    setError(null);
-  };
-
-  // Translate result: append the translation after the original text.
-  const handleAppend = (): void => {
-    if (!result) return;
-    setInputText(`${result.originalText} ${result.resultText}`);
-    setResult(null);
-    setError(null);
   };
 
   return (
@@ -229,11 +204,6 @@ export function QuickAction({
         <ResultDisplay
           originalText={result.originalText}
           resultText={result.resultText}
-          onClear={handleClear}
-          action={result.action}
-          {...(result.action === 'translate'
-            ? { onReplace: handleReplace, onAppend: handleAppend }
-            : {})}
         />
       )}
     </div>

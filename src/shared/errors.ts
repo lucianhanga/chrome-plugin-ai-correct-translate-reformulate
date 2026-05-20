@@ -22,11 +22,19 @@ export const ERROR_MESSAGES: Record<ErrorCode, string> = {
   INPUT_TOO_LONG:
     'Text is too long (max 10,000 characters). Select a shorter passage.',
   UNEXPECTED_RESPONSE:
-    'Received an unexpected response from Ollama. Check if Ollama is working correctly.',
+    'Received an unexpected response from the language model. Check that the selected provider is working correctly.',
   UNKNOWN_ERROR:
     'An unexpected error occurred. Check the browser console for details.',
   INVALID_MESSAGE:
     'Invalid message received. This is a bug -- please report it.',
+  OPENAI_AUTH_FAILED:
+    'OpenAI rejected the API key. Open Settings and check or re-enter your key.',
+  OPENAI_RATE_LIMITED:
+    'OpenAI rate limit reached. Wait a few seconds and try again.',
+  OPENAI_QUOTA_EXCEEDED:
+    'Your OpenAI account is out of quota or has a billing issue. Check your OpenAI account, or switch back to local Ollama in Settings.',
+  OPENAI_UNREACHABLE:
+    'Cannot reach OpenAI. Check your internet connection, or switch to local Ollama in Settings.',
 };
 
 // ============================================================
@@ -42,6 +50,10 @@ export const ERROR_COLORS: Record<ErrorCode, string> = {
   UNEXPECTED_RESPONSE: COLORS.FAILURE,
   UNKNOWN_ERROR: COLORS.FAILURE,
   INVALID_MESSAGE: COLORS.FAILURE,
+  OPENAI_AUTH_FAILED: COLORS.FAILURE,
+  OPENAI_RATE_LIMITED: COLORS.WARNING,
+  OPENAI_QUOTA_EXCEEDED: COLORS.FAILURE,
+  OPENAI_UNREACHABLE: COLORS.FAILURE,
 };
 
 // ============================================================
@@ -49,10 +61,31 @@ export const ERROR_COLORS: Record<ErrorCode, string> = {
 // ============================================================
 
 /**
- * Maps a raw Error to an ErrorCode based on message content or type.
+ * Structural error type carrying an ErrorCode directly.
+ * Used by the OpenAI client to avoid string-matching on error messages.
+ */
+export class LLMError extends Error {
+  readonly code: ErrorCode;
+
+  constructor(code: ErrorCode, message: string) {
+    super(message);
+    this.name = 'LLMError';
+    this.code = code;
+  }
+}
+
+/**
+ * Maps a raw Error to an ErrorCode based on structural type or message content.
+ * LLMError is classified structurally (no string matching needed).
+ * Plain Error messages are string-matched for backward compat with Ollama errors.
  */
 export function classifyError(error: unknown): ErrorCode {
   if (!(error instanceof Error)) return 'UNKNOWN_ERROR';
+
+  // Structural classification: LLMError carries its code directly.
+  if (error instanceof LLMError) {
+    return error.code;
+  }
 
   const msg = error.message.toLowerCase();
 

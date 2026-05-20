@@ -71,9 +71,21 @@ export function Popup(): React.ReactElement {
     >
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-[#313244]">
-        <h1 className="text-sm font-bold text-[#cdd6f4] tracking-tight">
-          Correct &amp; Translate
-        </h1>
+        <div className="flex items-center gap-2">
+          <h1 className="text-sm font-bold text-[#cdd6f4] tracking-tight">
+            Correct &amp; Translate
+          </h1>
+          {/* Persistent OpenAI indicator (D2): visible whenever OpenAI is the active provider. */}
+          {settingsLoaded && settings.provider === 'openai' && (
+            <span
+              className="px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide"
+              style={{ backgroundColor: '#eab308', color: '#1e1e2e' }}
+              title="Text is sent to OpenAI for processing"
+            >
+              OpenAI
+            </span>
+          )}
+        </div>
         <StatusIndicator refreshKey={statusRefreshKey} />
       </div>
 
@@ -87,7 +99,6 @@ export function Popup(): React.ReactElement {
           {settingsLoaded ? (
             <QuickAction
               defaultTargetLanguage={settings.defaultTargetLanguage}
-              sourceLanguageOverride={settings.sourceLanguageOverride}
             />
           ) : (
             <div className="flex items-center justify-center py-6">

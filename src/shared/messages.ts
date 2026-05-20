@@ -1,7 +1,8 @@
 // src/shared/messages.ts
 // Typed message interfaces and type guards for all extension message passing.
 
-import type { SupportedLanguage, ActionType, ErrorCode, ExtensionSettings } from './types.ts';
+import type { SupportedLanguage, ActionType, ErrorCode, ExtensionSettings, OpenAIModel } from './types.ts';
+import { AVAILABLE_OPENAI_MODELS } from './constants.ts';
 
 // ============================================================
 // Re-exports so consumers only need to import from messages.ts
@@ -25,7 +26,6 @@ export interface TranslateRequest {
   payload: {
     text: string;
     targetLanguage: SupportedLanguage;
-    sourceLanguage: SupportedLanguage | null;
   };
 }
 
@@ -44,12 +44,21 @@ export interface SaveSettingsRequest {
   };
 }
 
+export interface ValidateOpenAIKeyRequest {
+  type: 'VALIDATE_OPENAI_KEY';
+  payload: {
+    key: string;
+    model: OpenAIModel;
+  };
+}
+
 export type PopupToServiceWorkerMessage =
   | CorrectGrammarRequest
   | TranslateRequest
   | HealthCheckRequest
   | GetSettingsRequest
-  | SaveSettingsRequest;
+  | SaveSettingsRequest
+  | ValidateOpenAIKeyRequest;
 
 // ============================================================
 // Messages: Service Worker -> Content Script
@@ -131,12 +140,20 @@ export interface SaveSettingsResponse {
   success: true;
 }
 
+export interface ValidateOpenAIKeyResponse {
+  success: true;
+  valid: boolean;
+  modelFound: boolean;
+  error: string | null;
+}
+
 export type ServiceWorkerResponse =
   | SuccessResponse
   | ErrorResponse
   | HealthCheckResponse
   | SettingsResponse
-  | SaveSettingsResponse;
+  | SaveSettingsResponse
+  | ValidateOpenAIKeyResponse;
 
 // ============================================================
 // Known valid message type strings
@@ -148,6 +165,7 @@ const VALID_TYPES: ReadonlySet<string> = new Set([
   'HEALTH_CHECK',
   'GET_SETTINGS',
   'SAVE_SETTINGS',
+  'VALIDATE_OPENAI_KEY',
   'SHOW_LOADING',
   'SHOW_RESULT',
   'SHOW_ERROR',
@@ -187,8 +205,7 @@ export function isTranslateRequest(msg: unknown): msg is TranslateRequest {
   if (!payload) return false;
   return (
     typeof payload['text'] === 'string' &&
-    isSupportedLanguage(payload['targetLanguage']) &&
-    (payload['sourceLanguage'] === null || isSupportedLanguage(payload['sourceLanguage']))
+    isSupportedLanguage(payload['targetLanguage'])
   );
 }
 
@@ -209,5 +226,29 @@ export function isSaveSettingsRequest(msg: unknown): msg is SaveSettingsRequest 
   const m = msg as Record<string, unknown>;
   if (m['type'] !== 'SAVE_SETTINGS') return false;
   const payload = m['payload'] as Record<string, unknown> | undefined;
-  return typeof payload === 'object' && payload !== null && typeof payload['settings'] === 'object';
+  if (typeof payload !== 'object' || payload === null || typeof payload['settings'] !== 'object') {
+    return false;
+  }
+  const settings = payload['settings'] as Record<string, unknown>;
+  // Reject obviously malformed provider or openaiApiKey values
+  if ('provider' in settings && settings['provider'] !== 'ollama' && settings['provider'] !== 'openai') {
+    return false;
+  }
+  if ('openaiApiKey' in settings && typeof settings['openaiApiKey'] !== 'string') {
+    return false;
+  }
+  return true;
+}
+
+export function isValidateOpenAIKeyRequest(msg: unknown): msg is ValidateOpenAIKeyRequest {
+  if (typeof msg !== 'object' || msg === null) return false;
+  const m = msg as Record<string, unknown>;
+  if (m['type'] !== 'VALIDATE_OPENAI_KEY') return false;
+  const payload = m['payload'] as Record<string, unknown> | undefined;
+  if (typeof payload !== 'object' || payload === null) return false;
+  return (
+    typeof payload['key'] === 'string' &&
+    typeof payload['model'] === 'string' &&
+    AVAILABLE_OPENAI_MODELS.includes(payload['model'] as OpenAIModel)
+  );
 }

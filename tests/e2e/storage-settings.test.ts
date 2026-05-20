@@ -4,7 +4,6 @@
 // What is covered:
 //   - Default settings are applied on first run (no stored data).
 //   - Saving settings from the popup persists them across page refreshes.
-//   - Source language override persists and is reflected after reopen.
 //   - Changing the default target language is reflected in the QuickAction translate button.
 //   - Settings saved via the popup are readable from the service worker context.
 //
@@ -98,49 +97,6 @@ test.describe('Settings: persistence across popup reloads', () => {
     expect(response?.settings?.defaultTargetLanguage).toBe('Romanian');
   });
 
-  test('saved source language override persists', async ({ openPopup, extensionId, context }) => {
-    const popup1 = await openPopup();
-    await popup1.locator('[data-testid="settings-toggle"]').click();
-
-    // Click the "German" source language quick-set button.
-    await popup1.getByRole('button', { name: /^German$/i }).click();
-    await popup1.getByRole('button', { name: /Save Settings/i }).click();
-    await popup1.locator('text=Settings saved.').waitFor({ timeout: 5_000 });
-    await popup1.close();
-
-    // Reopen popup.
-    const popup2 = await context.newPage();
-    await popup2.goto(`chrome-extension://${extensionId}/popup.html`);
-    await popup2.waitForSelector('h1', { timeout: 8_000 });
-    await popup2.locator('[data-testid="settings-toggle"]').click();
-
-    // The German quick-set button should have the active (green) background.
-    // Use toHaveCSS (which retries) rather than evaluate+getComputedStyle (no retry).
-    const germanBtn = popup2.getByRole('button', { name: /^German$/i });
-    await expect(germanBtn).toHaveCSS('background-color', 'rgb(34, 197, 94)'); // #22c55e
-  });
-
-  test('Auto source language override persists after reset from German', async ({ openPopup, extensionId, context }) => {
-    const popup1 = await openPopup();
-    await popup1.locator('[data-testid="settings-toggle"]').click();
-    // Set German then immediately reset to Auto.
-    await popup1.getByRole('button', { name: /^German$/i }).click();
-    await popup1.getByRole('button', { name: /^Auto$/i }).click();
-    await popup1.getByRole('button', { name: /Save Settings/i }).click();
-    await popup1.locator('text=Settings saved.').waitFor({ timeout: 5_000 });
-    await popup1.close();
-
-    const popup2 = await context.newPage();
-    await popup2.goto(`chrome-extension://${extensionId}/popup.html`);
-    await popup2.waitForSelector('h1', { timeout: 8_000 });
-    await popup2.locator('[data-testid="settings-toggle"]').click();
-
-    // Auto button should be active (green).
-    // Use toHaveCSS (which retries) rather than evaluate+getComputedStyle (no retry).
-    const autoBtn = popup2.getByRole('button', { name: /^Auto$/i });
-    await expect(autoBtn).toHaveCSS('background-color', 'rgb(34, 197, 94)'); // #22c55e
-  });
-
   test('SAVE_SETTINGS message is readable back via GET_SETTINGS from the service worker', async ({ context, extensionId }) => {
     const settingsPage = await context.newPage();
     await settingsPage.goto(`chrome-extension://${extensionId}/popup.html`);
@@ -155,7 +111,6 @@ test.describe('Settings: persistence across popup reloads', () => {
             ollamaEndpoint: 'http://localhost:11434',
             model: 'qwen3:14b',
             defaultTargetLanguage: 'German',
-            sourceLanguageOverride: null,
           },
         },
       });

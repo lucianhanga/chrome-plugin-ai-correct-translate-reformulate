@@ -188,6 +188,70 @@ test.describe('Context menu: Correct Grammar', () => {
     );
   });
 
+  test('correct_grammar on an editable selection applies Replace via Enter', async ({ context, testServerBaseUrl }) => {
+    // The correction flow now uses the same result overlay as translation:
+    // it auto-copies and offers Replace / Append / Close (the old Accept /
+    // Reject buttons are gone). Replace is the primary keyboard action. This
+    // exercises the full pipeline: context-menu click -> SHOW_LOADING (captures
+    // the editable selection) -> real Ollama correction -> SHOW_RESULT ->
+    // Enter triggers Replace, observed as changed editable-element text.
+    const page = await context.newPage();
+    await page.goto(`${testServerBaseUrl}/test-page.html`);
+
+    const sw = context.serviceWorkers().find((w) => w.url().includes('service-worker.js'));
+    if (!sw) throw new Error('Service worker not found');
+
+    const tabId = await getTabId(sw);
+
+    // Inject the content script up front so the selection we make is live when
+    // SHOW_LOADING is handled (SHOW_LOADING captures the selection for Replace).
+    await sw.evaluate(async (tid: number) => {
+      await chrome.scripting.executeScript({ target: { tabId: tid }, files: ['content.js'] });
+    }, tabId);
+    await waitForContentScript(sw, tabId);
+
+    // Select the full text of the editable textarea (contains broken English).
+    const textarea = page.locator('[data-testid="textarea-field"]');
+    await textarea.click();
+    await textarea.selectText();
+    const originalValue = await textarea.inputValue();
+    expect(originalValue.length).toBeGreaterThan(0);
+
+    await simulateContextMenuClick(sw, tabId, 'correct_grammar', originalValue);
+
+    // Loading overlay appears.
+    await page.waitForFunction(
+      () => document.querySelector('[data-ct-overlay-host]') !== null,
+      undefined,
+      { timeout: 10_000 },
+    );
+
+    // The overlay stays present from loading through result, so we poll: press
+    // Enter and check for dismissal. Enter only triggers Replace once the result
+    // state has rendered (primaryKeyAction === doReplace); during loading it is
+    // a no-op. Retry for up to 120 s to absorb real Ollama inference latency.
+    let dismissed = false;
+    for (let i = 0; i < 60; i++) {
+      await page.keyboard.press('Enter');
+      try {
+        await page.waitForFunction(
+          () => document.querySelector('[data-ct-overlay-host]') === null,
+          undefined,
+          { timeout: 2_000 },
+        );
+        dismissed = true;
+        break;
+      } catch {
+        // Still loading -- the result state has not rendered yet. Retry.
+      }
+    }
+    expect(dismissed).toBe(true);
+
+    // Replace overwrote the textarea selection with the corrected text.
+    const valueAfterReplace = await textarea.inputValue();
+    expect(valueAfterReplace.trim().length).toBeGreaterThan(0);
+  });
+
   test('correct_grammar with INPUT_TOO_LONG shows error overlay immediately', async ({ context, testServerBaseUrl }) => {
     // INPUT_TOO_LONG is a pure client-side check -- no Ollama call is made.
     const page = await context.newPage();
