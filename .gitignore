@@ -1,0 +1,10 @@
+node_modules/
+dist/
+dist-test/
+coverage/
+*.local
+.DS_Store
+*.zip
+test-results/
+playwright-report/
+.claude/settings.local.json

@@ -1,0 +1,314 @@
+/* src/content/overlay.css
+   Styles for the result overlay injected into Shadow DOM.
+   All classes are prefixed with ct- to avoid collisions.
+   These styles are completely isolated inside Shadow DOM. */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+.ct-host {
+  all: initial;
+  position: fixed;
+  z-index: 2147483647;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #cdd6f4;
+  pointer-events: none;
+}
+
+.ct-overlay {
+  pointer-events: all;
+  background: #1e1e2e;
+  border: 1px solid #313244;
+  border-radius: 8px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.48), 0 2px 8px rgba(0, 0, 0, 0.32);
+  max-width: 480px;
+  min-width: 240px;
+  max-height: 320px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: ct-fade-in 0.15s ease-out forwards;
+}
+
+@keyframes ct-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ---- Header ---- */
+
+.ct-overlay-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid #313244;
+  flex-shrink: 0;
+}
+
+.ct-overlay-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #a6adc8;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.ct-overlay-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #6c7086;
+  font-size: 14px;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.12s, background 0.12s;
+}
+
+.ct-overlay-close:hover {
+  color: #cdd6f4;
+  background: #313244;
+}
+
+.ct-overlay-close:focus-visible {
+  outline: 2px solid #22c55e;
+  outline-offset: 1px;
+}
+
+/* ---- Body ---- */
+
+.ct-overlay-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  scrollbar-width: thin;
+  scrollbar-color: #45475a #1e1e2e;
+}
+
+.ct-overlay-body::-webkit-scrollbar {
+  width: 6px;
+}
+
+.ct-overlay-body::-webkit-scrollbar-track {
+  background: #1e1e2e;
+}
+
+.ct-overlay-body::-webkit-scrollbar-thumb {
+  background: #45475a;
+  border-radius: 3px;
+}
+
+/* ---- Loading State ---- */
+
+.ct-overlay-loading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #a6adc8;
+  font-size: 13px;
+}
+
+.ct-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid #313244;
+  border-top-color: #22c55e;
+  border-radius: 50%;
+  flex-shrink: 0;
+  animation: ct-spin 0.7s linear infinite;
+}
+
+@keyframes ct-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ---- Result State ---- */
+
+.ct-overlay-result {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ct-original {
+  font-size: 12px;
+  color: #6c7086;
+  padding: 6px 8px;
+  background: #181825;
+  border-radius: 4px;
+  border-left: 2px solid #45475a;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.ct-original-label {
+  display: block;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #585b70;
+  margin-bottom: 3px;
+}
+
+.ct-result {
+  font-size: 13px;
+  color: #cdd6f4;
+  padding: 6px 8px;
+  background: #181825;
+  border-radius: 4px;
+  border-left: 2px solid #22c55e;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.ct-result-label {
+  display: block;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #22c55e;
+  margin-bottom: 3px;
+  opacity: 0.8;
+}
+
+/* ---- Error State ---- */
+
+.ct-overlay-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.ct-error-icon {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  background: #eab308;
+  color: #1e1e2e;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 800;
+  margin-top: 1px;
+}
+
+.ct-error-message {
+  font-size: 13px;
+  color: #cdd6f4;
+  word-break: break-word;
+}
+
+.ct-error-message--red {
+  color: #ef4444;
+}
+
+/* ---- Actions Footer ---- */
+
+.ct-overlay-actions {
+  display: flex;
+  gap: 8px;
+  padding: 8px 12px;
+  border-top: 1px solid #313244;
+  flex-shrink: 0;
+}
+
+.ct-btn {
+  flex: 1;
+  padding: 6px 12px;
+  border: none;
+  border-radius: 5px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.12s, filter 0.12s;
+  font-family: inherit;
+}
+
+.ct-btn:focus-visible {
+  outline: 2px solid #89b4fa;
+  outline-offset: 2px;
+}
+
+.ct-btn:hover {
+  filter: brightness(1.1);
+}
+
+.ct-btn:active {
+  filter: brightness(0.9);
+}
+
+.ct-btn-accept {
+  background: #22c55e;
+  color: #1e1e2e;
+}
+
+.ct-btn-reject {
+  background: #ef4444;
+  color: #fff;
+}
+
+.ct-btn-dismiss {
+  background: #45475a;
+  color: #cdd6f4;
+}
+
+/* ---- Copied Toast ---- */
+
+.ct-copied-toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #313244;
+  color: #22c55e;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 6px 16px;
+  border-radius: 20px;
+  border: 1px solid #22c55e;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+  animation: ct-toast-in 0.15s ease-out, ct-toast-out 0.2s ease-in 1.4s forwards;
+  z-index: 2147483647;
+}
+
+@keyframes ct-toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+@keyframes ct-toast-out {
+  to {
+    opacity: 0;
+    transform: translateX(-50%) translateY(8px);
+  }
+}

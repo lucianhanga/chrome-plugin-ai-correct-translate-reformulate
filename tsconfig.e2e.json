@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    // E2E test files run in Node.js (playwright, fixtures, global-setup).
+    // We add 'node' types here and drop the chrome-only restriction.
+    "types": ["node", "chrome"],
+    // E2E tests do not need DOM lib for server-side Node code, but playwright
+    // type definitions reference DOM types. Keep DOM in the lib.
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    // The e2e directory uses Node.js resolution (fs, path, http imports).
+    // 'bundler' resolution works for both Node and browser-targeted code.
+    "moduleResolution": "bundler",
+    "noUnusedLocals": false,
+    "noUnusedParameters": false
+  },
+  "include": [
+    "tests/e2e/**/*.ts",
+    "playwright.config.ts"
+  ],
+  "exclude": ["node_modules", "dist", "dist-test"]
+}

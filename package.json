@@ -1,0 +1,58 @@
+{
+  "name": "correct-and-translate",
+  "version": "1.0.0",
+  "description": "Grammar correction and translation powered by local Ollama LLM.",
+  "scripts": {
+    "build": "vite build && CONTENT_OUT_DIR=dist vite build --config vite.config.content.ts",
+    "build:test": "vite build --config vite.config.test.ts && CONTENT_OUT_DIR=dist-test vite build --config vite.config.content.ts",
+    "dev": "vite build --watch",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.e2e.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "pnpm build:test && pnpm exec playwright test",
+    "test:e2e:ui": "pnpm build:test && pnpm exec playwright test --ui",
+    "test:e2e:debug": "pnpm build:test && pnpm exec playwright test --debug",
+    "lint": "eslint src tests"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devEngines": {
+    "packageManager": {
+      "name": "pnpm",
+      "version": "^11.1.3",
+      "onFail": "download"
+    }
+  },
+  "type": "module",
+  "dependencies": {
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.60.0",
+    "@tailwindcss/postcss": "^4.3.0",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@types/chrome": "^0.1.42",
+    "@types/node": "^25.9.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@typescript-eslint/eslint-plugin": "^8.59.4",
+    "@typescript-eslint/parser": "^8.59.4",
+    "@vitejs/plugin-react": "^6.0.2",
+    "@vitest/coverage-v8": "^4.1.6",
+    "autoprefixer": "^10.5.0",
+    "eslint": "^10.4.0",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "jsdom": "^29.1.1",
+    "postcss": "^8.5.14",
+    "tailwindcss": "^4.3.0",
+    "typescript": "^6.0.3",
+    "vite": "^8.0.13",
+    "vitest": "^4.1.6"
+  }
+}

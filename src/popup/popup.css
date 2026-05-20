@@ -1,0 +1,5 @@
+/* src/popup/popup.css
+   Tailwind entry point for the popup UI.
+   Import this in main.tsx to apply Tailwind utilities. */
+
+@import "tailwindcss";
