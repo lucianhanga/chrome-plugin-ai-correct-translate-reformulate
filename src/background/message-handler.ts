@@ -5,6 +5,7 @@ import type { ServiceWorkerResponse, ErrorCode } from '../shared/messages.ts';
 import {
   isCorrectGrammarRequest,
   isTranslateRequest,
+  isDetectLanguageRequest,
   isHealthCheckRequest,
   isGetSettingsRequest,
   isSaveSettingsRequest,
@@ -13,7 +14,7 @@ import {
 import { validateTextInput } from '../shared/validators.ts';
 import { classifyError, getUserMessage } from '../shared/errors.ts';
 import { getSettings, saveSettings } from '../shared/storage.ts';
-import { correctGrammar, translateText } from './tasks.ts';
+import { correctGrammar, translateText, detectLanguage } from './tasks.ts';
 import { checkOllamaHealth } from './ollama-client.ts';
 
 // ============================================================
@@ -85,6 +86,25 @@ export async function handleMessage(message: unknown): Promise<ServiceWorkerResp
       );
 
       return { success: true, result };
+    }
+
+    // DETECT_LANGUAGE
+    if (isDetectLanguageRequest(message)) {
+      const validation = validateTextInput(message.payload.text);
+      if (!validation.valid) {
+        return errorResponse(
+          validation.errorCode ?? 'INVALID_MESSAGE',
+          validation.errorMessage,
+        );
+      }
+
+      const settings = await getSettings();
+      const detectedLanguage = await detectLanguage(message.payload.text, {
+        model: settings.model,
+        endpoint: settings.ollamaEndpoint,
+      });
+
+      return { success: true, detectedLanguage };
     }
 
     // HEALTH_CHECK

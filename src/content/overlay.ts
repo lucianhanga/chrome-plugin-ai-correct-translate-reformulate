@@ -1,23 +1,24 @@
 // src/content/overlay.ts
-// Shadow DOM overlay component for displaying loading, result, and error states.
+// Shadow DOM overlay for loading, language-confirm, result, and error states.
 // Only one overlay exists at a time -- creating a new one removes any existing one.
 
-import type { ActionType } from '../shared/types.ts';
-import type { ErrorCode } from '../shared/types.ts';
-import { COLORS } from '../shared/constants.ts';
+import type { ActionType, ErrorCode, SupportedLanguage } from '../shared/types.ts';
+import { COLORS, SUPPORTED_LANGUAGES } from '../shared/constants.ts';
 import { ERROR_COLORS } from '../shared/errors.ts';
 
 // ============================================================
 // Types
 // ============================================================
 
-export type OverlayState = 'loading' | 'result' | 'error';
+export type OverlayState = 'loading' | 'confirm' | 'result' | 'error';
 
 export interface OverlayResultData {
   action: ActionType;
   originalText: string;
   resultText: string;
   targetLanguage?: string;
+  /** Translate only: whether Replace/Append can be applied (selection is editable). */
+  editable?: boolean;
 }
 
 export interface OverlayErrorData {
@@ -26,8 +27,27 @@ export interface OverlayErrorData {
 }
 
 export interface OverlayCallbacks {
-  onAccept: (resultText: string) => void;
+  /** Grammar-correction primary action: replace the selection with the result. */
+  onAccept?: (resultText: string) => void;
+  /** Translate: replace the original text with the translation. */
+  onReplace?: (resultText: string) => void;
+  /** Translate: append the translation immediately after the original text. */
+  onAppend?: (resultText: string) => void;
+  /** Dismiss the overlay without applying anything. */
   onReject: () => void;
+}
+
+export interface OverlayLanguageConfirmData {
+  originalText: string;
+  detectedLanguage: SupportedLanguage;
+  targetLanguage: SupportedLanguage;
+}
+
+export interface LanguageConfirmCallbacks {
+  /** Called with the (possibly user-corrected) source language. */
+  onConfirm: (sourceLanguage: SupportedLanguage) => void;
+  /** Called when the user cancels before translating. */
+  onCancel: () => void;
 }
 
 // ============================================================
@@ -37,56 +57,60 @@ export interface OverlayCallbacks {
 let currentHostElement: HTMLElement | null = null;
 let currentShadowRoot: ShadowRoot | null = null;
 let keydownHandler: ((e: KeyboardEvent) => void) | null = null;
-let currentResultText: string | null = null;
+// The action the Enter key triggers in the current overlay state, if any.
+let primaryKeyAction: (() => void) | null = null;
 
 // ============================================================
 // Public API
 // ============================================================
 
-/**
- * Show the loading state overlay near the current text selection.
- */
-export function showLoading(action: ActionType, originalText: string): void {
+/** Show the loading state ("Correcting…" / "Translating…"). */
+export function showLoading(action: ActionType, _originalText: string): void {
   const position = getSelectionPosition();
   const root = createOrReplaceOverlay();
-
-  const title = action === 'correct' ? 'Correcting...' : 'Translating...';
-  renderLoading(root, title, originalText);
+  renderLoading(root, action === 'correct' ? 'Correcting…' : 'Translating…');
   positionOverlay(currentHostElement!, position);
 }
 
-/**
- * Transition the existing overlay (or create a new one) to the result state.
- */
+/** Show the "Detecting language…" state (first step of the translate flow). */
+export function showDetecting(): void {
+  const position = getSelectionPosition();
+  const root = createOrReplaceOverlay();
+  renderLoading(root, 'Detecting language…');
+  positionOverlay(currentHostElement!, position);
+}
+
+/** Show the language-confirmation step: detected language is editable before translating. */
+export function showLanguageConfirm(
+  data: OverlayLanguageConfirmData,
+  callbacks: LanguageConfirmCallbacks,
+): void {
+  const position = getSelectionPosition();
+  const root = currentShadowRoot ?? createOrReplaceOverlay();
+  renderLanguageConfirm(root, data, callbacks);
+  positionOverlay(currentHostElement!, position);
+}
+
+/** Transition the overlay (or create one) to the result state. */
 export function showResult(data: OverlayResultData, callbacks: OverlayCallbacks): void {
   const position = getSelectionPosition();
   const root = currentShadowRoot ?? createOrReplaceOverlay();
-
-  currentResultText = data.resultText;
-
-  const title = buildResultTitle(data);
-  renderResult(root, title, data, callbacks);
+  renderResult(root, buildResultTitle(data), data, callbacks);
   positionOverlay(currentHostElement!, position);
-  setupKeyboardHandler(callbacks);
-  focusAcceptButton(root);
+  focusPrimaryButton(root);
 }
 
-/**
- * Transition the existing overlay (or create a new one) to the error state.
- */
+/** Transition the overlay (or create one) to the error state. */
 export function showError(data: OverlayErrorData): void {
   const position = getSelectionPosition();
   const root = currentShadowRoot ?? createOrReplaceOverlay();
-
-  currentResultText = null;
   renderError(root, data);
   positionOverlay(currentHostElement!, position);
   removeKeyboardHandler();
+  primaryKeyAction = null;
 }
 
-/**
- * Remove the overlay from the DOM entirely.
- */
+/** Remove the overlay from the DOM entirely. */
 export function dismissOverlay(): void {
   cleanup();
 }
@@ -104,7 +128,6 @@ function createOrReplaceOverlay(): ShadowRoot {
 
   const shadow = host.attachShadow({ mode: 'closed' });
 
-  // Inject the stylesheet into the shadow root
   const styleEl = document.createElement('style');
   styleEl.textContent = getOverlayCSS();
   shadow.appendChild(styleEl);
@@ -117,22 +140,25 @@ function createOrReplaceOverlay(): ShadowRoot {
 
 function cleanup(): void {
   removeKeyboardHandler();
+  primaryKeyAction = null;
   if (currentHostElement) {
     currentHostElement.remove();
     currentHostElement = null;
   }
   currentShadowRoot = null;
-  currentResultText = null;
 }
 
 // ============================================================
 // Renderers
 // ============================================================
 
-function renderLoading(root: ShadowRoot, title: string, _originalText: string): void {
-  const overlay = buildOverlayShell(root, title);
+function renderLoading(root: ShadowRoot, title: string): void {
+  removeKeyboardHandler();
+  primaryKeyAction = null;
 
+  const overlay = buildOverlayShell(root, title);
   const body = overlay.querySelector('.ct-overlay-body') as HTMLElement;
+
   const loadingDiv = document.createElement('div');
   loadingDiv.className = 'ct-overlay-loading';
 
@@ -145,8 +171,86 @@ function renderLoading(root: ShadowRoot, title: string, _originalText: string): 
   loadingDiv.appendChild(spinner);
   loadingDiv.appendChild(label);
   body.appendChild(loadingDiv);
+}
 
-  // No actions footer during loading
+function renderLanguageConfirm(
+  root: ShadowRoot,
+  data: OverlayLanguageConfirmData,
+  callbacks: LanguageConfirmCallbacks,
+): void {
+  const overlay = buildOverlayShell(root, `Translate to ${data.targetLanguage}`);
+  const body = overlay.querySelector('.ct-overlay-body') as HTMLElement;
+
+  const confirmDiv = document.createElement('div');
+  confirmDiv.className = 'ct-overlay-confirm';
+
+  // Original text (dimmed)
+  const originalBlock = document.createElement('div');
+  originalBlock.className = 'ct-original';
+  const originalLabel = document.createElement('span');
+  originalLabel.className = 'ct-original-label';
+  originalLabel.textContent = 'Original';
+  const originalText = document.createElement('span');
+  originalText.textContent = data.originalText;
+  originalBlock.appendChild(originalLabel);
+  originalBlock.appendChild(originalText);
+
+  // Detected-language row with an editable select
+  const langRow = document.createElement('div');
+  langRow.className = 'ct-lang-row';
+
+  const langLabel = document.createElement('span');
+  langLabel.className = 'ct-lang-label';
+  langLabel.textContent = 'Detected language';
+
+  const select = document.createElement('select');
+  select.className = 'ct-lang-select';
+  select.setAttribute('data-ct-lang-select', '');
+  for (const lang of SUPPORTED_LANGUAGES) {
+    const opt = document.createElement('option');
+    opt.value = lang;
+    opt.textContent = lang;
+    if (lang === data.detectedLanguage) opt.selected = true;
+    select.appendChild(opt);
+  }
+
+  langRow.appendChild(langLabel);
+  langRow.appendChild(select);
+
+  confirmDiv.appendChild(originalBlock);
+  confirmDiv.appendChild(langRow);
+  body.appendChild(confirmDiv);
+
+  // Actions footer
+  const actionsDiv = document.createElement('div');
+  actionsDiv.className = 'ct-overlay-actions';
+
+  const translateBtn = document.createElement('button');
+  translateBtn.className = 'ct-btn ct-btn-accept';
+  translateBtn.textContent = 'Translate';
+  translateBtn.setAttribute('data-ct-confirm', '');
+  const doConfirm = (): void => {
+    callbacks.onConfirm(select.value as SupportedLanguage);
+  };
+  translateBtn.addEventListener('click', doConfirm);
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.className = 'ct-btn ct-btn-reject';
+  cancelBtn.textContent = 'Cancel';
+  cancelBtn.addEventListener('click', () => {
+    callbacks.onCancel();
+    cleanup();
+  });
+
+  actionsDiv.appendChild(translateBtn);
+  actionsDiv.appendChild(cancelBtn);
+  overlay.appendChild(actionsDiv);
+
+  primaryKeyAction = doConfirm;
+  setupKeyboardHandler(() => {
+    callbacks.onCancel();
+  });
+  translateBtn.focus();
 }
 
 function renderResult(
@@ -156,8 +260,8 @@ function renderResult(
   callbacks: OverlayCallbacks,
 ): void {
   const overlay = buildOverlayShell(root, title);
-
   const body = overlay.querySelector('.ct-overlay-body') as HTMLElement;
+
   const resultDiv = document.createElement('div');
   resultDiv.className = 'ct-overlay-result';
 
@@ -185,38 +289,90 @@ function renderResult(
 
   resultDiv.appendChild(originalBlock);
   resultDiv.appendChild(resultBlock);
+
+  // Translate results are auto-copied to the clipboard; show a hint.
+  if (data.action === 'translate') {
+    const hint = document.createElement('div');
+    hint.className = 'ct-copied-hint';
+    hint.textContent = 'Copied to clipboard';
+    resultDiv.appendChild(hint);
+  }
+
   body.appendChild(resultDiv);
 
   // Actions footer
   const actionsDiv = document.createElement('div');
   actionsDiv.className = 'ct-overlay-actions';
 
-  const acceptBtn = document.createElement('button');
-  acceptBtn.className = 'ct-btn ct-btn-accept';
-  acceptBtn.textContent = 'Accept';
-  acceptBtn.setAttribute('data-ct-accept', '');
-  acceptBtn.addEventListener('click', () => {
-    callbacks.onAccept(data.resultText);
-    cleanup();
-  });
+  if (data.action === 'translate') {
+    if (data.editable === true) {
+      const replaceBtn = document.createElement('button');
+      replaceBtn.className = 'ct-btn ct-btn-accept';
+      replaceBtn.textContent = 'Replace';
+      replaceBtn.setAttribute('data-ct-replace', '');
+      const doReplace = (): void => {
+        callbacks.onReplace?.(data.resultText);
+        cleanup();
+      };
+      replaceBtn.addEventListener('click', doReplace);
 
-  const rejectBtn = document.createElement('button');
-  rejectBtn.className = 'ct-btn ct-btn-reject';
-  rejectBtn.textContent = 'Reject';
-  rejectBtn.addEventListener('click', () => {
-    callbacks.onReject();
-    cleanup();
-  });
+      const appendBtn = document.createElement('button');
+      appendBtn.className = 'ct-btn ct-btn-secondary';
+      appendBtn.textContent = 'Append';
+      appendBtn.setAttribute('data-ct-append', '');
+      appendBtn.addEventListener('click', () => {
+        callbacks.onAppend?.(data.resultText);
+        cleanup();
+      });
 
-  actionsDiv.appendChild(acceptBtn);
-  actionsDiv.appendChild(rejectBtn);
+      actionsDiv.appendChild(replaceBtn);
+      actionsDiv.appendChild(appendBtn);
+      primaryKeyAction = doReplace;
+    } else {
+      primaryKeyAction = null;
+    }
+
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'ct-btn ct-btn-dismiss';
+    closeBtn.textContent = 'Close';
+    closeBtn.addEventListener('click', () => {
+      callbacks.onReject();
+      cleanup();
+    });
+    actionsDiv.appendChild(closeBtn);
+  } else {
+    // Grammar correction: Accept / Reject
+    const acceptBtn = document.createElement('button');
+    acceptBtn.className = 'ct-btn ct-btn-accept';
+    acceptBtn.textContent = 'Accept';
+    acceptBtn.setAttribute('data-ct-accept', '');
+    const doAccept = (): void => {
+      callbacks.onAccept?.(data.resultText);
+      cleanup();
+    };
+    acceptBtn.addEventListener('click', doAccept);
+
+    const rejectBtn = document.createElement('button');
+    rejectBtn.className = 'ct-btn ct-btn-reject';
+    rejectBtn.textContent = 'Reject';
+    rejectBtn.addEventListener('click', () => {
+      callbacks.onReject();
+      cleanup();
+    });
+
+    actionsDiv.appendChild(acceptBtn);
+    actionsDiv.appendChild(rejectBtn);
+    primaryKeyAction = doAccept;
+  }
+
   overlay.appendChild(actionsDiv);
+  setupKeyboardHandler(callbacks.onReject);
 }
 
 function renderError(root: ShadowRoot, data: OverlayErrorData): void {
   const overlay = buildOverlayShell(root, 'Error');
-
   const body = overlay.querySelector('.ct-overlay-body') as HTMLElement;
+
   const errorDiv = document.createElement('div');
   errorDiv.className = 'ct-overlay-error';
 
@@ -237,7 +393,6 @@ function renderError(root: ShadowRoot, data: OverlayErrorData): void {
   errorDiv.appendChild(msgSpan);
   body.appendChild(errorDiv);
 
-  // Dismiss button
   const actionsDiv = document.createElement('div');
   actionsDiv.className = 'ct-overlay-actions';
 
@@ -257,14 +412,12 @@ function renderError(root: ShadowRoot, data: OverlayErrorData): void {
 // ============================================================
 
 function buildOverlayShell(root: ShadowRoot, title: string): HTMLElement {
-  // Remove any existing overlay element (but keep the style tag)
   const existing = root.querySelector('.ct-overlay');
   if (existing) existing.remove();
 
   const overlay = document.createElement('div');
   overlay.className = 'ct-overlay';
 
-  // Header
   const header = document.createElement('div');
   header.className = 'ct-overlay-header';
 
@@ -284,7 +437,6 @@ function buildOverlayShell(root: ShadowRoot, title: string): HTMLElement {
   header.appendChild(closeBtn);
   overlay.appendChild(header);
 
-  // Body
   const body = document.createElement('div');
   body.className = 'ct-overlay-body';
   overlay.appendChild(body);
@@ -327,24 +479,21 @@ function positionOverlay(host: HTMLElement, pos: Position): void {
   const vpWidth = window.innerWidth;
   const vpHeight = window.innerHeight;
 
-  // Horizontal: align to selection left, clamp to viewport
   let left = pos.left;
   if (left + OVERLAY_MAX_WIDTH > vpWidth - MARGIN) {
     left = vpWidth - OVERLAY_MAX_WIDTH - MARGIN;
   }
   if (left < MARGIN) left = MARGIN;
 
-  // Vertical: prefer below selection; flip above if not enough space below
   const spaceBelow = vpHeight - (pos.anchorBottom - window.scrollY);
   let top: number;
 
   if (spaceBelow >= OVERLAY_MAX_HEIGHT + 8) {
     top = pos.top;
   } else {
-    // Position above the selection
     top = pos.anchorBottom - window.scrollY - OVERLAY_MAX_HEIGHT - 8 + window.scrollY;
     if (top < window.scrollY + MARGIN) {
-      top = pos.top; // fallback: below anyway
+      top = pos.top;
     }
   }
 
@@ -359,24 +508,26 @@ function positionOverlay(host: HTMLElement, pos: Position): void {
 // Keyboard Handler
 // ============================================================
 
-function setupKeyboardHandler(callbacks: OverlayCallbacks): void {
+function setupKeyboardHandler(onEscape: () => void): void {
   removeKeyboardHandler();
 
   keydownHandler = (e: KeyboardEvent) => {
     if (e.key === 'Escape') {
       e.preventDefault();
-      callbacks.onReject();
+      onEscape();
       cleanup();
     } else if (e.key === 'Enter') {
-      // Only accept if focus is inside the overlay or no specific input is focused
       const active = document.activeElement;
-      const isInsideOverlay =
-        !active || active === document.body || active === document.documentElement;
-
-      if (isInsideOverlay && currentResultText !== null) {
+      // With a closed shadow root, document.activeElement reports the host
+      // element when a control inside the overlay is focused.
+      const isOverlayFocused =
+        !active ||
+        active === document.body ||
+        active === document.documentElement ||
+        active === currentHostElement;
+      if (isOverlayFocused && primaryKeyAction) {
         e.preventDefault();
-        callbacks.onAccept(currentResultText);
-        cleanup();
+        primaryKeyAction();
       }
     }
   };
@@ -401,26 +552,21 @@ function buildResultTitle(data: OverlayResultData): string {
   return 'Translation';
 }
 
-function focusAcceptButton(root: ShadowRoot): void {
-  // Shadow DOM query -- need to go through the root
-  const btn = root.querySelector('[data-ct-accept]') as HTMLButtonElement | null;
-  if (btn) {
-    btn.focus();
-  }
+function focusPrimaryButton(root: ShadowRoot): void {
+  const btn = root.querySelector(
+    '[data-ct-accept], [data-ct-replace]',
+  ) as HTMLButtonElement | null;
+  btn?.focus();
 }
 
 // ============================================================
 // Inline CSS
 // The CSS file is inlined at build time via the ?inline import in content.ts.
-// At runtime the CSS string is passed in; this function returns the cached value.
 // ============================================================
 
 let _cachedCSS: string | null = null;
 
-/**
- * Set the CSS string to be injected into Shadow DOM.
- * Must be called before any overlay is shown.
- */
+/** Set the CSS string to be injected into Shadow DOM. Call before showing any overlay. */
 export function setOverlayCSS(css: string): void {
   _cachedCSS = css;
 }
@@ -438,10 +584,10 @@ function getOverlayCSS(): string {
  * The toast self-removes after the animation completes (~1.6s).
  */
 export function showCopiedToast(): void {
-  // Show toast in a separate shadow host so it is not affected by page styles
   const toastHost = document.createElement('div');
   toastHost.setAttribute('data-ct-toast-host', '');
-  toastHost.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:2147483647;pointer-events:none;';
+  toastHost.style.cssText =
+    'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:2147483647;pointer-events:none;';
   document.body.appendChild(toastHost);
 
   const shadow = toastHost.attachShadow({ mode: 'closed' });

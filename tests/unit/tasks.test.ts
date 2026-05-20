@@ -1,6 +1,10 @@
 // tests/unit/tasks.test.ts
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { GRAMMAR_CORRECT_SYSTEM, buildTranslateSystemPrompt } from '../../src/shared/prompts.ts';
+import {
+  GRAMMAR_CORRECT_SYSTEM,
+  buildTranslateSystemPrompt,
+  DETECT_LANGUAGE_SYSTEM,
+} from '../../src/shared/prompts.ts';
 
 // Mock ollama-client before importing tasks
 vi.mock('../../src/background/ollama-client.ts', () => ({
@@ -99,5 +103,50 @@ describe('translateText', () => {
 
     const result = await translateText('The sun is shining.', 'Romanian', null);
     expect(result).toBe('Soarele straluceste.');
+  });
+});
+
+describe('detectLanguage', () => {
+  it('calls callOllama with the language-detection system prompt', async () => {
+    const { callOllama } = await import('../../src/background/ollama-client.ts');
+    const { detectLanguage } = await import('../../src/background/tasks.ts');
+    vi.mocked(callOllama).mockResolvedValue('German');
+
+    const result = await detectLanguage('Guten Tag, wie geht es dir?');
+    expect(result).toBe('German');
+    expect(callOllama).toHaveBeenCalledWith(
+      DETECT_LANGUAGE_SYSTEM,
+      'Guten Tag, wie geht es dir?',
+      expect.objectContaining({ temperature: 0 }),
+    );
+  });
+
+  it('matches the language case-insensitively and ignores surrounding text', async () => {
+    const { callOllama } = await import('../../src/background/ollama-client.ts');
+    const { detectLanguage } = await import('../../src/background/tasks.ts');
+    vi.mocked(callOllama).mockResolvedValue('The language is romanian.');
+
+    expect(await detectLanguage('Buna ziua')).toBe('Romanian');
+  });
+
+  it('defaults to English when the reply is not a recognized language', async () => {
+    const { callOllama } = await import('../../src/background/ollama-client.ts');
+    const { detectLanguage } = await import('../../src/background/tasks.ts');
+    vi.mocked(callOllama).mockResolvedValue('Klingon');
+
+    expect(await detectLanguage('nuqneH')).toBe('English');
+  });
+
+  it('passes model and endpoint options through to callOllama', async () => {
+    const { callOllama } = await import('../../src/background/ollama-client.ts');
+    const { detectLanguage } = await import('../../src/background/tasks.ts');
+    vi.mocked(callOllama).mockResolvedValue('English');
+
+    await detectLanguage('Hello', { model: 'qwen3:14b', endpoint: 'http://localhost:11434' });
+    expect(callOllama).toHaveBeenCalledWith(
+      DETECT_LANGUAGE_SYSTEM,
+      'Hello',
+      expect.objectContaining({ model: 'qwen3:14b', endpoint: 'http://localhost:11434', temperature: 0 }),
+    );
   });
 });

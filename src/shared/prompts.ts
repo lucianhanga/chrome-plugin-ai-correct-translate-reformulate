@@ -58,3 +58,17 @@ export function buildTranslateSystemPrompt(
   }
   return buildTranslateAutoSystemPrompt(targetLanguage);
 }
+
+// ============================================================
+// Language Detection Prompt
+// ============================================================
+
+/**
+ * System prompt for detecting the source language of a piece of text.
+ * The model is constrained to the three supported languages.
+ */
+export const DETECT_LANGUAGE_SYSTEM = `You are a language detection assistant.
+Identify the primary language of the given text.
+The only valid answers are: English, German, Romanian.
+If the text is in another language, choose the closest of those three.
+Output ONLY one word -- English, German, or Romanian -- with no explanation, punctuation, quotes, or markdown.`;

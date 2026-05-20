@@ -6,6 +6,7 @@ import { installChromeMock, resetChromeMock } from '../mocks/chrome.ts';
 vi.mock('../../src/background/tasks.ts', () => ({
   correctGrammar: vi.fn(),
   translateText: vi.fn(),
+  detectLanguage: vi.fn(),
 }));
 
 // Mock Ollama health check
@@ -92,6 +93,29 @@ describe('handleMessage', () => {
     const response = await handleMessage({
       type: 'TRANSLATE',
       payload: { text: '  ', targetLanguage: 'German', sourceLanguage: null },
+    });
+    expect(response).toMatchObject({ success: false, errorCode: 'EMPTY_INPUT' });
+  });
+
+  it('handles DETECT_LANGUAGE and returns the detected language', async () => {
+    const { detectLanguage } = await import('../../src/background/tasks.ts');
+    vi.mocked(detectLanguage).mockResolvedValue('German');
+
+    const { handleMessage } = await import('../../src/background/message-handler.ts');
+    const response = await handleMessage({
+      type: 'DETECT_LANGUAGE',
+      payload: { text: 'Guten Tag.' },
+    });
+
+    expect(response).toMatchObject({ success: true, detectedLanguage: 'German' });
+    expect(detectLanguage).toHaveBeenCalledWith('Guten Tag.', expect.any(Object));
+  });
+
+  it('returns EMPTY_INPUT for DETECT_LANGUAGE with empty text', async () => {
+    const { handleMessage } = await import('../../src/background/message-handler.ts');
+    const response = await handleMessage({
+      type: 'DETECT_LANGUAGE',
+      payload: { text: '' },
     });
     expect(response).toMatchObject({ success: false, errorCode: 'EMPTY_INPUT' });
   });

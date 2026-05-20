@@ -192,6 +192,50 @@
   opacity: 0.8;
 }
 
+.ct-copied-hint {
+  font-size: 11px;
+  font-weight: 600;
+  color: #22c55e;
+}
+
+/* ---- Language Confirm State ---- */
+
+.ct-overlay-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ct-lang-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ct-lang-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #585b70;
+}
+
+.ct-lang-select {
+  background: #181825;
+  color: #cdd6f4;
+  border: 1px solid #313244;
+  border-radius: 5px;
+  padding: 6px 8px;
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.ct-lang-select:focus-visible {
+  outline: 2px solid #22c55e;
+  outline-offset: 1px;
+}
+
 /* ---- Error State ---- */
 
 .ct-overlay-error {
@@ -273,6 +317,12 @@
 .ct-btn-dismiss {
   background: #45475a;
   color: #cdd6f4;
+}
+
+.ct-btn-secondary {
+  background: #313244;
+  color: #cdd6f4;
+  border: 1px solid #45475a;
 }
 
 /* ---- Copied Toast ---- */

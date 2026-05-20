@@ -96,6 +96,20 @@ function handleContextMenuClick(
         throw Object.assign(new Error(getUserMessage(errorCode)), { _validationError: true });
       }
 
+      // Translate: hand off to the content script, which runs the
+      // detect-language -> confirm -> translate flow itself.
+      if (resolvedAction.action === 'translate' && resolvedAction.targetLanguage !== undefined) {
+        sendToContentScript(tabId, {
+          type: 'START_TRANSLATE',
+          payload: {
+            originalText: selectionText,
+            targetLanguage: resolvedAction.targetLanguage,
+          },
+        });
+        return null;
+      }
+
+      // Correct: the service worker drives loading -> result.
       const loadingMsg: ServiceWorkerToContentScriptMessage = {
         type: 'SHOW_LOADING',
         payload: {
@@ -108,7 +122,11 @@ function handleContextMenuClick(
       // Dispatch to the correct task
       return processContextMenuAction(resolvedAction.action, selectionText, resolvedAction.targetLanguage);
     })
-    .then((result: string) => {
+    .then((result: string | null) => {
+      if (result === null) {
+        // Translate path was handed off to the content script.
+        return;
+      }
       const resultMsg: ServiceWorkerToContentScriptMessage = {
         type: 'SHOW_RESULT',
         payload: {

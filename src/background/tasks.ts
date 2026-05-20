@@ -3,9 +3,11 @@
 
 import type { SupportedLanguage, OllamaCallOptions } from '../shared/types.ts';
 import { callOllama } from './ollama-client.ts';
+import { SUPPORTED_LANGUAGES } from '../shared/constants.ts';
 import {
   GRAMMAR_CORRECT_SYSTEM,
   buildTranslateSystemPrompt,
+  DETECT_LANGUAGE_SYSTEM,
 } from '../shared/prompts.ts';
 
 // ============================================================
@@ -53,4 +55,30 @@ export async function translateText(
     temperature: 0.2,
     ...ollamaOptions,
   });
+}
+
+// ============================================================
+// Language Detection
+// ============================================================
+
+/**
+ * Detect the source language of the given text using Ollama.
+ * Always resolves to one of the supported languages (defaults to English
+ * if the model returns an unrecognized answer).
+ *
+ * @param text - The text whose language to detect
+ * @param ollamaOptions - Optional overrides for model, endpoint, timeout
+ * @returns One of the supported languages
+ */
+export async function detectLanguage(
+  text: string,
+  ollamaOptions: OllamaCallOptions = {},
+): Promise<SupportedLanguage> {
+  const reply = await callOllama(DETECT_LANGUAGE_SYSTEM, text, {
+    temperature: 0,
+    ...ollamaOptions,
+  });
+  const normalized = reply.trim().toLowerCase();
+  const match = SUPPORTED_LANGUAGES.find((lang) => normalized.includes(lang.toLowerCase()));
+  return match ?? 'English';
 }

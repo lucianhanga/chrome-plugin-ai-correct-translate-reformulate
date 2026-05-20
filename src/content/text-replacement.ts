@@ -1,52 +1,108 @@
 // src/content/text-replacement.ts
-// Replaces selected text with the given result string.
-// For editable elements: replaces the selection in-place.
-// For non-editable: copies to clipboard.
+// Applies result text to the page: replaces or appends in editable fields,
+// or copies to the clipboard when the selection is not editable.
 
 import { showCopiedToast } from './overlay.ts';
+
+// Separator inserted between the original text and an appended translation.
+const APPEND_SEPARATOR = ' ';
+
+// ============================================================
+// Captured selection target
+// ============================================================
+
+// The translate flow adds a confirmation click between selecting text and
+// applying the result; that click would collapse the live page selection.
+// The selection is therefore captured up front, and Replace/Append operate on
+// the captured target rather than a live window.getSelection().
+export type CapturedTarget =
+  | { kind: 'input'; element: HTMLTextAreaElement | HTMLInputElement; start: number; end: number }
+  | { kind: 'contenteditable'; range: Range }
+  | { kind: 'none' };
+
+/**
+ * Capture the current selection as a target for later Replace/Append.
+ * Must be called while the original selection is still live.
+ */
+export function captureSelectionTarget(): CapturedTarget {
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0) return { kind: 'none' };
+
+  const anchorNode = selection.anchorNode;
+  if (!anchorNode) return { kind: 'none' };
+
+  const editable = findEditableAncestor(anchorNode);
+  if (editable instanceof HTMLTextAreaElement || editable instanceof HTMLInputElement) {
+    return {
+      kind: 'input',
+      element: editable,
+      start: editable.selectionStart ?? 0,
+      end: editable.selectionEnd ?? 0,
+    };
+  }
+  if (editable instanceof HTMLElement && isContentEditable(editable)) {
+    return { kind: 'contenteditable', range: selection.getRangeAt(0).cloneRange() };
+  }
+  return { kind: 'none' };
+}
+
+/** True when the captured target can be edited in place (Replace/Append apply). */
+export function isEditableTarget(target: CapturedTarget): boolean {
+  return target.kind !== 'none';
+}
 
 // ============================================================
 // Public API
 // ============================================================
 
 /**
- * Apply the given result text to the current selection.
- *
- * - If the selection is inside a <textarea> or <input[type=text]>:
- *     Replace the selected range using .value manipulation.
- * - If the selection is inside a contenteditable element:
- *     Replace using document.execCommand('insertText') for plain-text safety.
- * - Otherwise:
- *     Copy the result to the clipboard and show a "Copied!" toast.
+ * Apply the given result text to the current (live) selection.
+ * Used by the grammar-correction flow, which has no confirmation step.
  */
 export async function applyResult(resultText: string): Promise<void> {
-  const selection = window.getSelection();
-  if (!selection || selection.rangeCount === 0) {
-    await copyToClipboard(resultText);
+  await replaceCaptured(captureSelectionTarget(), resultText);
+}
+
+/**
+ * Replace the captured selection with the given text.
+ * Falls back to the clipboard when the target is not editable.
+ */
+export async function replaceCaptured(target: CapturedTarget, text: string): Promise<void> {
+  if (target.kind === 'input') {
+    replaceRangeInInput(target.element, target.start, target.end, text);
     return;
   }
-
-  const anchorNode = selection.anchorNode;
-  if (!anchorNode) {
-    await copyToClipboard(resultText);
+  if (target.kind === 'contenteditable') {
+    insertIntoCapturedRange(target.range, text, 'replace');
     return;
   }
+  await copyToClipboard(text);
+}
 
-  // Walk up the DOM to find the nearest editable element
-  const editableElement = findEditableAncestor(anchorNode);
-
-  if (editableElement instanceof HTMLTextAreaElement || editableElement instanceof HTMLInputElement) {
-    replaceInInputElement(editableElement, resultText);
+/**
+ * Append the given text immediately after the captured selection,
+ * keeping the original. Falls back to the clipboard when not editable.
+ */
+export async function appendCaptured(target: CapturedTarget, text: string): Promise<void> {
+  if (target.kind === 'input') {
+    // Insert after the original selection; the original text is kept.
+    replaceRangeInInput(target.element, target.end, target.end, APPEND_SEPARATOR + text);
     return;
   }
-
-  if (editableElement instanceof HTMLElement && isContentEditable(editableElement)) {
-    replaceInContentEditable(resultText);
+  if (target.kind === 'contenteditable') {
+    insertIntoCapturedRange(target.range, APPEND_SEPARATOR + text, 'append');
     return;
   }
+  await copyToClipboard(text);
+}
 
-  // Non-editable context: copy to clipboard
-  await copyToClipboard(resultText);
+/** Copy text to the clipboard without showing a toast (used for the auto-copy on result). */
+export async function copyResultToClipboard(text: string): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    fallbackCopyToClipboard(text);
+  }
 }
 
 // ============================================================
@@ -54,52 +110,55 @@ export async function applyResult(resultText: string): Promise<void> {
 // ============================================================
 
 /**
- * Replace selected text in a <textarea> or <input> element.
- * Uses .value manipulation with explicit selection range update.
+ * Replace the [start, end) range of an <input>/<textarea> value with newText.
+ * Passing start === end inserts without removing anything.
  */
-function replaceInInputElement(
+function replaceRangeInInput(
   element: HTMLTextAreaElement | HTMLInputElement,
+  start: number,
+  end: number,
   newText: string,
 ): void {
-  const start = element.selectionStart ?? 0;
-  const end = element.selectionEnd ?? 0;
   const current = element.value;
-
   element.value = current.slice(0, start) + newText + current.slice(end);
 
-  // Move cursor to end of inserted text
   const newCursorPos = start + newText.length;
   element.selectionStart = newCursorPos;
   element.selectionEnd = newCursorPos;
 
-  // Dispatch input/change events so frameworks (React, Vue, etc.) pick up the change
+  // Dispatch input/change events so frameworks (React, Vue, etc.) pick up the change.
   element.dispatchEvent(new Event('input', { bubbles: true }));
   element.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
 /**
- * Replace selected text in a contenteditable element.
- * Uses document.execCommand('insertText') which inserts plain text safely,
- * respecting undo history.
+ * Insert text into a captured contenteditable range.
+ * 'replace' overwrites the range; 'append' inserts after the range's end.
+ * Uses execCommand('insertText') for plain-text, undo-friendly insertion.
  */
-function replaceInContentEditable(newText: string): void {
-  // document.execCommand is deprecated but remains the correct approach for
-  // plain-text insertion into contenteditable that respects undo stacks.
-  // insertText inserts plain text (never HTML), so it is safe against XSS.
-  const success = document.execCommand('insertText', false, newText);
-  if (!success) {
-    // Fallback: manual range deletion + text node insertion
-    const selection = window.getSelection();
-    if (!selection || selection.rangeCount === 0) return;
-    const range = selection.getRangeAt(0);
-    range.deleteContents();
-    const textNode = document.createTextNode(newText);
-    range.insertNode(textNode);
-    // Collapse cursor to end of inserted node
-    range.setStartAfter(textNode);
-    range.setEndAfter(textNode);
+function insertIntoCapturedRange(range: Range, text: string, mode: 'replace' | 'append'): void {
+  const selection = window.getSelection();
+  if (!selection) return;
+
+  const targetRange = range.cloneRange();
+  if (mode === 'append') {
+    targetRange.collapse(false); // collapse to the end of the original selection
+  }
+
+  selection.removeAllRanges();
+  selection.addRange(targetRange);
+
+  // execCommand('insertText') inserts plain text only (never HTML) -- safe against XSS.
+  const ok = document.execCommand('insertText', false, text);
+  if (!ok) {
+    // Fallback: manual range manipulation.
+    targetRange.deleteContents();
+    const node = document.createTextNode(text);
+    targetRange.insertNode(node);
+    targetRange.setStartAfter(node);
+    targetRange.setEndAfter(node);
     selection.removeAllRanges();
-    selection.addRange(range);
+    selection.addRange(targetRange);
   }
 }
 
@@ -108,12 +167,7 @@ function replaceInContentEditable(newText: string): void {
 // ============================================================
 
 async function copyToClipboard(text: string): Promise<void> {
-  try {
-    await navigator.clipboard.writeText(text);
-  } catch {
-    // Fallback for contexts where clipboard API is restricted
-    fallbackCopyToClipboard(text);
-  }
+  await copyResultToClipboard(text);
   showCopiedToast();
 }
 
