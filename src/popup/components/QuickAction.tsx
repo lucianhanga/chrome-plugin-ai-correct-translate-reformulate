@@ -2,7 +2,7 @@
 // Text area + action buttons for quick correction or translation from the popup.
 
 import React, { useState } from 'react';
-import type { SupportedLanguage, ActionType } from '../../shared/types.ts';
+import type { SupportedLanguage } from '../../shared/types.ts';
 import type {
   SuccessResponse,
   ErrorResponse,
@@ -20,7 +20,6 @@ interface QuickActionProps {
 interface ResultState {
   originalText: string;
   resultText: string;
-  action: ActionType;
 }
 
 export function QuickAction({
@@ -50,7 +49,7 @@ export function QuickAction({
       }) as ServiceWorkerResponse;
 
       if (isSuccessResponse(response)) {
-        setResult({ originalText: inputText, resultText: response.result, action: 'correct' });
+        setResult({ originalText: inputText, resultText: response.result });
       } else if (isErrorResponse(response)) {
         setError(response.error);
       } else {
@@ -79,7 +78,7 @@ export function QuickAction({
       }) as ServiceWorkerResponse;
 
       if (isSuccessResponse(response)) {
-        setResult({ originalText: inputText, resultText: response.result, action: 'translate' });
+        setResult({ originalText: inputText, resultText: response.result });
       } else if (isErrorResponse(response)) {
         setError(response.error);
       } else {
@@ -91,27 +90,6 @@ export function QuickAction({
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleClear = (): void => {
-    setResult(null);
-    setError(null);
-  };
-
-  // Translate result: replace the input text with the translation.
-  const handleReplace = (): void => {
-    if (!result) return;
-    setInputText(result.resultText);
-    setResult(null);
-    setError(null);
-  };
-
-  // Translate result: append the translation after the original text.
-  const handleAppend = (): void => {
-    if (!result) return;
-    setInputText(`${result.originalText} ${result.resultText}`);
-    setResult(null);
-    setError(null);
   };
 
   return (
@@ -229,11 +207,6 @@ export function QuickAction({
         <ResultDisplay
           originalText={result.originalText}
           resultText={result.resultText}
-          onClear={handleClear}
-          action={result.action}
-          {...(result.action === 'translate'
-            ? { onReplace: handleReplace, onAppend: handleAppend }
-            : {})}
         />
       )}
     </div>

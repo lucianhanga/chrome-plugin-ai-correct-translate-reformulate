@@ -126,7 +126,6 @@ describe('ResultDisplay', () => {
       <ResultDisplay
         originalText="She dont know."
         resultText="She does not know."
-        onClear={() => undefined}
       />,
     );
 
@@ -134,35 +133,17 @@ describe('ResultDisplay', () => {
     expect(within(container).getByText('She does not know.')).toBeInTheDocument();
   });
 
-  it('renders Copy and Clear buttons', async () => {
+  it('auto-copies the result and shows the copied confirmation (no action buttons)', async () => {
     const { ResultDisplay } = await import('../../src/popup/components/ResultDisplay.tsx');
 
     const { container } = render(
-      <ResultDisplay
-        originalText="test"
-        resultText="result"
-        onClear={() => undefined}
-      />,
+      <ResultDisplay originalText="test" resultText="result" />,
     );
 
-    expect(within(container).getByRole('button', { name: /copy/i })).toBeInTheDocument();
-    expect(within(container).getByRole('button', { name: /clear/i })).toBeInTheDocument();
-  });
-
-  it('calls onClear when Clear is clicked', async () => {
-    const { ResultDisplay } = await import('../../src/popup/components/ResultDisplay.tsx');
-
-    let cleared = false;
-    const { container } = render(
-      <ResultDisplay
-        originalText="test"
-        resultText="result"
-        onClear={() => { cleared = true; }}
-      />,
-    );
-
-    fireEvent.click(within(container).getByRole('button', { name: /clear/i }));
-    expect(cleared).toBe(true);
+    // The result is copied automatically; a confirmation is shown.
+    expect(within(container).getByTestId('copied-hint')).toBeInTheDocument();
+    // There are no Replace / Append / Copy / Clear buttons.
+    expect(within(container).queryByRole('button')).toBeNull();
   });
 });
 
