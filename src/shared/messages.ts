@@ -1,14 +1,14 @@
 // src/shared/messages.ts
 // Typed message interfaces and type guards for all extension message passing.
 
-import type { SupportedLanguage, ActionType, ErrorCode, ExtensionSettings, OpenAIModel } from './types.ts';
-import { AVAILABLE_OPENAI_MODELS } from './constants.ts';
+import type { SupportedLanguage, ActionType, ErrorCode, ExtensionSettings, OpenAIModel, ReformulateTone } from './types.ts';
+import { AVAILABLE_OPENAI_MODELS, REFORMULATE_TONES } from './constants.ts';
 
 // ============================================================
 // Re-exports so consumers only need to import from messages.ts
 // ============================================================
 
-export type { SupportedLanguage, ActionType, ErrorCode, ExtensionSettings };
+export type { SupportedLanguage, ActionType, ErrorCode, ExtensionSettings, ReformulateTone };
 
 // ============================================================
 // Messages: Popup -> Service Worker
@@ -52,13 +52,23 @@ export interface ValidateOpenAIKeyRequest {
   };
 }
 
+export interface ReformulateRequest {
+  type: 'REFORMULATE';
+  payload: {
+    text: string;
+    tone: ReformulateTone;
+    keepTerminology: boolean;
+  };
+}
+
 export type PopupToServiceWorkerMessage =
   | CorrectGrammarRequest
   | TranslateRequest
   | HealthCheckRequest
   | GetSettingsRequest
   | SaveSettingsRequest
-  | ValidateOpenAIKeyRequest;
+  | ValidateOpenAIKeyRequest
+  | ReformulateRequest;
 
 // ============================================================
 // Messages: Service Worker -> Content Script
@@ -71,6 +81,8 @@ export interface ShowLoadingMessage {
     originalText: string;
     /** Active LLM provider, used to display "Processing with <provider>..." */
     provider: import('./types.ts').LLMProvider;
+    /** Reformulate tone, present only when action is 'reformulate'. */
+    tone?: ReformulateTone;
   };
 }
 
@@ -81,6 +93,8 @@ export interface ShowResultMessage {
     originalText: string;
     resultText: string;
     targetLanguage?: SupportedLanguage;
+    /** Reformulate tone, present only when action is 'reformulate'. */
+    tone?: ReformulateTone;
     /** Model identifier reported by the LLM response. */
     model: string;
     /** Total tokens consumed (prompt + completion), or null when absent. */
@@ -112,12 +126,24 @@ export interface StartTranslateMessage {
   };
 }
 
+export interface StartReformulateMessage {
+  type: 'START_REFORMULATE';
+  payload: {
+    originalText: string;
+    tone: ReformulateTone;
+    keepTerminology: boolean;
+    /** Active LLM provider, used to display "Processing with <provider>..." */
+    provider: import('./types.ts').LLMProvider;
+  };
+}
+
 export type ServiceWorkerToContentScriptMessage =
   | ShowLoadingMessage
   | ShowResultMessage
   | ShowErrorMessage
   | DismissOverlayMessage
-  | StartTranslateMessage;
+  | StartTranslateMessage
+  | StartReformulateMessage;
 
 // ============================================================
 // Responses: Service Worker -> Popup
@@ -178,6 +204,7 @@ export type ServiceWorkerResponse =
 const VALID_TYPES: ReadonlySet<string> = new Set([
   'CORRECT_GRAMMAR',
   'TRANSLATE',
+  'REFORMULATE',
   'HEALTH_CHECK',
   'GET_SETTINGS',
   'SAVE_SETTINGS',
@@ -187,6 +214,7 @@ const VALID_TYPES: ReadonlySet<string> = new Set([
   'SHOW_ERROR',
   'DISMISS_OVERLAY',
   'START_TRANSLATE',
+  'START_REFORMULATE',
 ]);
 
 const SUPPORTED_LANGUAGES_SET: ReadonlySet<string> = new Set([
@@ -266,5 +294,28 @@ export function isValidateOpenAIKeyRequest(msg: unknown): msg is ValidateOpenAIK
     typeof payload['key'] === 'string' &&
     typeof payload['model'] === 'string' &&
     AVAILABLE_OPENAI_MODELS.includes(payload['model'] as OpenAIModel)
+  );
+}
+
+/**
+ * Type guard: checks that value is one of the four ReformulateTone values.
+ */
+export function isReformulateTone(v: unknown): v is ReformulateTone {
+  return typeof v === 'string' && (REFORMULATE_TONES as readonly string[]).includes(v);
+}
+
+/**
+ * Type guard: validates a REFORMULATE message from the popup.
+ */
+export function isReformulateRequest(msg: unknown): msg is ReformulateRequest {
+  if (typeof msg !== 'object' || msg === null) return false;
+  const m = msg as Record<string, unknown>;
+  if (m['type'] !== 'REFORMULATE') return false;
+  const payload = m['payload'] as Record<string, unknown> | undefined;
+  if (typeof payload !== 'object' || payload === null) return false;
+  return (
+    typeof payload['text'] === 'string' &&
+    isReformulateTone(payload['tone']) &&
+    typeof payload['keepTerminology'] === 'boolean'
   );
 }

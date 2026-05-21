@@ -5,6 +5,7 @@ import type { ServiceWorkerResponse, ErrorCode } from '../shared/messages.ts';
 import {
   isCorrectGrammarRequest,
   isTranslateRequest,
+  isReformulateRequest,
   isHealthCheckRequest,
   isGetSettingsRequest,
   isSaveSettingsRequest,
@@ -14,7 +15,7 @@ import {
 import { validateTextInput } from '../shared/validators.ts';
 import { classifyError, getUserMessage } from '../shared/errors.ts';
 import { getSettings, saveSettings } from '../shared/storage.ts';
-import { correctGrammar, translateText } from './tasks.ts';
+import { correctGrammar, translateText, reformulateText } from './tasks.ts';
 import { checkOllamaHealth } from './ollama-client.ts';
 import { getActiveClient } from './llm-client.ts';
 import { checkOpenAIHealth } from './openai-client.ts';
@@ -121,6 +122,39 @@ export async function handleMessage(message: unknown): Promise<ServiceWorkerResp
           { model: settings.model, endpoint: settings.ollamaEndpoint },
         );
       }
+
+      return {
+        success: true,
+        result: llmResult.text,
+        model: llmResult.model,
+        totalTokens: llmResult.totalTokens,
+        elapsedMs: llmResult.elapsedMs,
+      };
+    }
+
+    // REFORMULATE
+    if (isReformulateRequest(message)) {
+      const validation = validateTextInput(message.payload.text);
+      if (!validation.valid) {
+        return errorResponse(
+          validation.errorCode ?? 'INVALID_MESSAGE',
+          validation.errorMessage,
+        );
+      }
+
+      const settings = await getSettings();
+      const client = getActiveClient(settings);
+      const model = settings.provider === 'openai' ? settings.openaiModel : settings.model;
+      // Temperature: 0.3 for 'keep' (minimal change), 0.4 for all other tones.
+      const temperature = message.payload.tone === 'keep' ? 0.3 : 0.4;
+
+      const llmResult = await reformulateText(
+        client,
+        message.payload.text,
+        message.payload.tone,
+        message.payload.keepTerminology,
+        { model, temperature },
+      );
 
       return {
         success: true,

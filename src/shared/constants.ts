@@ -1,7 +1,7 @@
 // src/shared/constants.ts
 // Shared constants used across extension contexts.
 
-import type { SupportedLanguage, ExtensionSettings, OpenAIModel } from './types.ts';
+import type { SupportedLanguage, ExtensionSettings, OpenAIModel, ReformulateTone } from './types.ts';
 
 // ============================================================
 // Supported Languages
@@ -75,6 +75,26 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   openaiModel: DEFAULT_OPENAI_MODEL,
   openaiApiKey: '',
   openaiConsentAcknowledged: false,
+  keepTerminology: true,
+  defaultReformulateTone: 'keep',
+};
+
+// ============================================================
+// Reformulate Tone Constants
+// ============================================================
+
+export const REFORMULATE_TONES: readonly ReformulateTone[] = [
+  'keep',
+  'professional',
+  'friendly',
+  'natural',
+] as const;
+
+export const REFORMULATE_TONE_LABELS: Record<ReformulateTone, string> = {
+  keep: 'Keep tone',
+  professional: 'Professional',
+  friendly: 'Friendly',
+  natural: 'Natural',
 };
 
 // ============================================================
@@ -82,11 +102,21 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
 // ============================================================
 
 export const CONTEXT_MENU_IDS = {
+  CT_ROOT: 'ct_root',
   CORRECT_GRAMMAR: 'correct_grammar',
+  SEPARATOR_1: 'ct_sep_1',
   TRANSLATE_PARENT: 'translate_parent',
   TRANSLATE_EN: 'translate_en',
   TRANSLATE_DE: 'translate_de',
   TRANSLATE_RO: 'translate_ro',
+  SEPARATOR_2: 'ct_sep_2',
+  REFORMULATE_PARENT: 'reformulate_parent',
+  REFORMULATE_KEEP: 'reformulate_keep',
+  REFORMULATE_PROFESSIONAL: 'reformulate_professional',
+  REFORMULATE_FRIENDLY: 'reformulate_friendly',
+  REFORMULATE_NATURAL: 'reformulate_natural',
+  SEPARATOR_3: 'ct_sep_3',
+  KEEP_TERMINOLOGY: 'keep_terminology',
 } as const;
 
 export type ContextMenuId = (typeof CONTEXT_MENU_IDS)[keyof typeof CONTEXT_MENU_IDS];

@@ -7,8 +7,9 @@ import { handleMessage } from './message-handler.ts';
 import { resolveMenuAction } from './context-menu.ts';
 import { validateTextInput } from '../shared/validators.ts';
 import { classifyError, getUserMessage } from '../shared/errors.ts';
-import { getSettings } from '../shared/storage.ts';
+import { getSettings, saveSettings } from '../shared/storage.ts';
 import { correctGrammar, translateText } from './tasks.ts';
+import { CONTEXT_MENU_IDS } from '../shared/constants.ts';
 import type { ServiceWorkerToContentScriptMessage } from '../shared/messages.ts';
 
 // ============================================================
@@ -16,7 +17,9 @@ import type { ServiceWorkerToContentScriptMessage } from '../shared/messages.ts'
 // ============================================================
 
 chrome.runtime.onInstalled.addListener(() => {
-  registerContextMenus();
+  registerContextMenus().catch((err: unknown) => {
+    console.error('[service-worker] registerContextMenus failed on install:', err);
+  });
 });
 
 // ============================================================
@@ -24,7 +27,9 @@ chrome.runtime.onInstalled.addListener(() => {
 // ============================================================
 
 chrome.runtime.onStartup.addListener(() => {
-  registerContextMenus();
+  registerContextMenus().catch((err: unknown) => {
+    console.error('[service-worker] registerContextMenus failed on startup:', err);
+  });
 });
 
 // ============================================================
@@ -48,6 +53,32 @@ chrome.runtime.onMessage.addListener(
 );
 
 // ============================================================
+// Storage Change Listener (keep terminology checkbox in sync)
+// ============================================================
+
+chrome.storage.onChanged.addListener(
+  (changes: { [key: string]: chrome.storage.StorageChange }, areaName: string) => {
+    if (areaName !== 'local') return;
+    const settingsChange = changes['settings'];
+    if (!settingsChange) return;
+
+    const newSettings = settingsChange.newValue as Record<string, unknown> | undefined;
+    if (!newSettings) return;
+
+    if (typeof newSettings['keepTerminology'] === 'boolean') {
+      chrome.contextMenus.update(
+        CONTEXT_MENU_IDS.KEEP_TERMINOLOGY,
+        { checked: newSettings['keepTerminology'] as boolean },
+      ).catch((err: unknown) => {
+        // The menu item may not exist yet (e.g. on very first install before
+        // onInstalled fires). Suppress the error.
+        console.warn('[service-worker] contextMenus.update failed:', err);
+      });
+    }
+  },
+);
+
+// ============================================================
 // Context Menu Click Handler
 // ============================================================
 
@@ -64,9 +95,19 @@ function handleContextMenuClick(
   const selectionText = info.selectionText ?? '';
   const menuItemId = String(info.menuItemId);
 
+  // Handle the keep_terminology checkbox toggle before any LLM routing.
+  // It is a pure settings toggle -- no content script injection needed.
+  if (menuItemId === CONTEXT_MENU_IDS.KEEP_TERMINOLOGY) {
+    saveSettings({ keepTerminology: info.checked === true }).catch((err: unknown) => {
+      console.error('[service-worker] Failed to save keepTerminology:', err);
+    });
+    return;
+  }
+
   const resolvedAction = resolveMenuAction(menuItemId);
   if (!resolvedAction) {
-    // Clicked on a parent item (translate_parent) -- no action needed
+    // Clicked on a parent item (ct_root, translate_parent, reformulate_parent)
+    // or a separator -- no action needed.
     return;
   }
 
@@ -91,7 +132,6 @@ function handleContextMenuClick(
             errorMessage: validation.errorMessage ?? getUserMessage(errorCode),
           },
         });
-        // Return a resolved-but-sentinel value so the next .then does not fire.
         // Throwing here is cleaner; the .catch will handle it as a known user error.
         throw Object.assign(new Error(getUserMessage(errorCode)), { _validationError: true });
       }
@@ -100,14 +140,28 @@ function handleContextMenuClick(
       const settings = await getSettings();
 
       // Translate: hand off to the content script, which runs the
-      // translate-and-show-result flow itself (the model auto-detects the
-      // source language during the translation call -- no separate step).
+      // translate-and-show-result flow itself.
       if (resolvedAction.action === 'translate' && resolvedAction.targetLanguage !== undefined) {
         sendToContentScript(tabId, {
           type: 'START_TRANSLATE',
           payload: {
             originalText: selectionText,
             targetLanguage: resolvedAction.targetLanguage,
+            provider: settings.provider,
+          },
+        });
+        return null;
+      }
+
+      // Reformulate: hand off to the content script, which runs the
+      // reformulate-and-show-result flow itself.
+      if (resolvedAction.action === 'reformulate' && resolvedAction.tone !== undefined) {
+        sendToContentScript(tabId, {
+          type: 'START_REFORMULATE',
+          payload: {
+            originalText: selectionText,
+            tone: resolvedAction.tone,
+            keepTerminology: settings.keepTerminology,
             provider: settings.provider,
           },
         });
@@ -125,12 +179,17 @@ function handleContextMenuClick(
       };
       sendToContentScript(tabId, loadingMsg);
 
-      // Dispatch to the correct task
-      return processContextMenuAction(resolvedAction.action, selectionText, resolvedAction.targetLanguage);
+      // Dispatch to the correct task. By this point the reformulate and
+      // translate branches have already returned, so action is always 'correct'.
+      return processContextMenuAction(
+        resolvedAction.action as 'correct' | 'translate',
+        selectionText,
+        resolvedAction.targetLanguage,
+      );
     })
     .then((llmResult: import('../shared/types.ts').LLMResult | null) => {
       if (llmResult === null) {
-        // Translate path was handed off to the content script.
+        // Translate / reformulate path was handed off to the content script.
         return;
       }
       const resultMsg: ServiceWorkerToContentScriptMessage = {

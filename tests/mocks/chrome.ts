@@ -34,6 +34,10 @@ const chromeMock = {
         }
       }),
     },
+    onChanged: {
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+    },
   },
   runtime: {
     sendMessage: vi.fn(),
@@ -49,6 +53,7 @@ const chromeMock = {
     removeAll: vi.fn((_callback?: () => void) => {
       if (_callback) _callback();
     }),
+    update: vi.fn().mockResolvedValue(undefined),
     onClicked: {
       addListener: vi.fn(),
     },
@@ -102,6 +107,7 @@ export function resetChromeMock(): void {
   chromeMock.contextMenus.removeAll.mockImplementation((_callback?: () => void) => {
     if (_callback) _callback();
   });
+  chromeMock.contextMenus.update.mockResolvedValue(undefined);
 }
 
 export { chromeMock };

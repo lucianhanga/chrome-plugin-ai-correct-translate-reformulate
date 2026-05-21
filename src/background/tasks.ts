@@ -1,12 +1,14 @@
 // src/background/tasks.ts
 // High-level task functions for grammar correction and translation.
 
-import type { LLMResult, SupportedLanguage, OllamaCallOptions } from '../shared/types.ts';
+import type { LLMResult, SupportedLanguage, OllamaCallOptions, ReformulateTone } from '../shared/types.ts';
 import { callOllama } from './ollama-client.ts';
 import {
   GRAMMAR_CORRECT_SYSTEM,
   buildTranslateSystemPrompt,
+  buildReformulateSystemPrompt,
 } from '../shared/prompts.ts';
+import type { LLMClient, LLMCallOptions } from './llm-client.ts';
 
 // ============================================================
 // Grammar Correction
@@ -52,4 +54,30 @@ export async function translateText(
     temperature: 0.2,
     ...ollamaOptions,
   });
+}
+
+// ============================================================
+// Reformulation
+// ============================================================
+
+/**
+ * Reformulate text using the provider-agnostic LLMClient.
+ * Temperature: 0.3 for 'keep' tone, 0.4 for all other tones.
+ *
+ * @param client - The active LLM client (Ollama or OpenAI)
+ * @param text - The text to reformulate
+ * @param tone - The tone style to apply
+ * @param keepTerminology - Whether foreign words should be folded into the dominant language
+ * @param options - Model name and optional temperature override
+ * @returns LLMResult with reformulated text and metadata
+ */
+export async function reformulateText(
+  client: LLMClient,
+  text: string,
+  tone: ReformulateTone,
+  keepTerminology: boolean,
+  options: LLMCallOptions,
+): Promise<LLMResult> {
+  const systemPrompt = buildReformulateSystemPrompt(tone, keepTerminology);
+  return client.call(systemPrompt, text, options);
 }

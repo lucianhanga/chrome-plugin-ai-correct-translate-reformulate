@@ -5,6 +5,8 @@ import {
   isSupportedLanguage,
   isCorrectGrammarRequest,
   isTranslateRequest,
+  isReformulateRequest,
+  isReformulateTone,
   isHealthCheckRequest,
   isGetSettingsRequest,
   isSaveSettingsRequest,
@@ -15,6 +17,7 @@ describe('isValidMessageType', () => {
   it('accepts known message types', () => {
     expect(isValidMessageType('CORRECT_GRAMMAR')).toBe(true);
     expect(isValidMessageType('TRANSLATE')).toBe(true);
+    expect(isValidMessageType('REFORMULATE')).toBe(true);
     expect(isValidMessageType('HEALTH_CHECK')).toBe(true);
     expect(isValidMessageType('GET_SETTINGS')).toBe(true);
     expect(isValidMessageType('SAVE_SETTINGS')).toBe(true);
@@ -24,6 +27,7 @@ describe('isValidMessageType', () => {
     expect(isValidMessageType('SHOW_ERROR')).toBe(true);
     expect(isValidMessageType('DISMISS_OVERLAY')).toBe(true);
     expect(isValidMessageType('START_TRANSLATE')).toBe(true);
+    expect(isValidMessageType('START_REFORMULATE')).toBe(true);
   });
 
   it('rejects unknown message types', () => {
@@ -242,5 +246,92 @@ describe('isValidateOpenAIKeyRequest', () => {
 
   it('rejects null', () => {
     expect(isValidateOpenAIKeyRequest(null)).toBe(false);
+  });
+});
+
+// ============================================================
+// isReformulateTone
+// ============================================================
+
+describe('isReformulateTone', () => {
+  it('accepts all four valid tones', () => {
+    expect(isReformulateTone('keep')).toBe(true);
+    expect(isReformulateTone('professional')).toBe(true);
+    expect(isReformulateTone('friendly')).toBe(true);
+    expect(isReformulateTone('natural')).toBe(true);
+  });
+
+  it('rejects invalid strings', () => {
+    expect(isReformulateTone('ultra-casual')).toBe(false);
+    expect(isReformulateTone('')).toBe(false);
+    expect(isReformulateTone('KEEP')).toBe(false);
+  });
+
+  it('rejects non-string values', () => {
+    expect(isReformulateTone(null)).toBe(false);
+    expect(isReformulateTone(undefined)).toBe(false);
+    expect(isReformulateTone(42)).toBe(false);
+  });
+});
+
+// ============================================================
+// isReformulateRequest
+// ============================================================
+
+describe('isReformulateRequest', () => {
+  it('accepts a valid REFORMULATE message', () => {
+    const msg = {
+      type: 'REFORMULATE',
+      payload: { text: 'Some text.', tone: 'professional', keepTerminology: true },
+    };
+    expect(isReformulateRequest(msg)).toBe(true);
+  });
+
+  it('accepts all four valid tones', () => {
+    for (const tone of ['keep', 'professional', 'friendly', 'natural']) {
+      expect(isReformulateRequest({
+        type: 'REFORMULATE',
+        payload: { text: 'text', tone, keepTerminology: false },
+      })).toBe(true);
+    }
+  });
+
+  it('accepts keepTerminology=false', () => {
+    expect(isReformulateRequest({
+      type: 'REFORMULATE',
+      payload: { text: 'text', tone: 'keep', keepTerminology: false },
+    })).toBe(true);
+  });
+
+  it('rejects an invalid tone', () => {
+    expect(isReformulateRequest({
+      type: 'REFORMULATE',
+      payload: { text: 'text', tone: 'ultra-casual', keepTerminology: true },
+    })).toBe(false);
+  });
+
+  it('rejects a non-boolean keepTerminology', () => {
+    expect(isReformulateRequest({
+      type: 'REFORMULATE',
+      payload: { text: 'text', tone: 'keep', keepTerminology: 'yes' },
+    })).toBe(false);
+  });
+
+  it('rejects missing text', () => {
+    expect(isReformulateRequest({
+      type: 'REFORMULATE',
+      payload: { tone: 'keep', keepTerminology: true },
+    })).toBe(false);
+  });
+
+  it('rejects wrong type', () => {
+    expect(isReformulateRequest({
+      type: 'TRANSLATE',
+      payload: { text: 'text', tone: 'keep', keepTerminology: true },
+    })).toBe(false);
+  });
+
+  it('rejects null', () => {
+    expect(isReformulateRequest(null)).toBe(false);
   });
 });

@@ -131,6 +131,63 @@ describe('getSettings: OpenAI provider field migration and coercion', () => {
   });
 });
 
+// ============================================================
+// Reformulate settings coercion (new fields)
+// ============================================================
+
+describe('getSettings: reformulate field defaults and coercion', () => {
+  async function seedRawSettings(raw: Record<string, unknown>): Promise<void> {
+    await chromeMock.storage.local.set({ settings: raw });
+  }
+
+  it('returns keepTerminology=true and defaultReformulateTone=keep from defaults', async () => {
+    const { getSettings } = await getStorageModule();
+    const settings = await getSettings();
+    expect(settings.keepTerminology).toBe(true);
+    expect(settings.defaultReformulateTone).toBe('keep');
+  });
+
+  it('preserves stored keepTerminology=false', async () => {
+    const { getSettings } = await getStorageModule();
+    await seedRawSettings({ ...DEFAULT_SETTINGS, keepTerminology: false });
+    const settings = await getSettings();
+    expect(settings.keepTerminology).toBe(false);
+  });
+
+  it('preserves stored defaultReformulateTone=professional', async () => {
+    const { getSettings } = await getStorageModule();
+    await seedRawSettings({ ...DEFAULT_SETTINGS, defaultReformulateTone: 'professional' });
+    const settings = await getSettings();
+    expect(settings.defaultReformulateTone).toBe('professional');
+  });
+
+  it('coerces a non-boolean keepTerminology to true', async () => {
+    const { getSettings } = await getStorageModule();
+    await seedRawSettings({ ...DEFAULT_SETTINGS, keepTerminology: 'yes' });
+    const settings = await getSettings();
+    expect(settings.keepTerminology).toBe(true);
+  });
+
+  it('coerces an unknown defaultReformulateTone to keep', async () => {
+    const { getSettings } = await getStorageModule();
+    await seedRawSettings({ ...DEFAULT_SETTINGS, defaultReformulateTone: 'ultra-casual' });
+    const settings = await getSettings();
+    expect(settings.defaultReformulateTone).toBe('keep');
+  });
+
+  it('fills reformulate fields from defaults for a pre-reformulate stored shape', async () => {
+    const { getSettings } = await getStorageModule();
+    await seedRawSettings({
+      ollamaEndpoint: 'http://localhost:11434',
+      model: 'qwen3:14b',
+      defaultTargetLanguage: 'German',
+    });
+    const settings = await getSettings();
+    expect(settings.keepTerminology).toBe(true);
+    expect(settings.defaultReformulateTone).toBe('keep');
+  });
+});
+
 describe('saveSettings', () => {
   it('persists a partial settings update', async () => {
     const { getSettings, saveSettings } = await getStorageModule();
