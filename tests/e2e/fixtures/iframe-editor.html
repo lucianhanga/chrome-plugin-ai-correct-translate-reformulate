@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Iframe Editor</title>
+  </head>
+  <body>
+    <!-- Stands in for a webmail compose editor: an editable field that lives
+         inside an iframe, so its selection is only visible to a content script
+         injected into THIS frame, not the top frame. -->
+    <p data-testid="iframe-static">This static paragraph is not editable.</p>
+    <textarea data-testid="iframe-textarea" rows="6" cols="60">i has went to the store yesterday and buyed two apple</textarea>
+  </body>
+</html>

@@ -92,6 +92,11 @@ function handleContextMenuClick(
   }
 
   const tabId = tab.id;
+  // The frame the user right-clicked in. A selection inside an iframe (e.g. a
+  // webmail compose editor) lives in that frame's own document, so the content
+  // script must be injected there -- injecting into the top frame would never
+  // see the selection. Defaults to 0 (the top frame) when absent.
+  const frameId = info.frameId ?? 0;
   const selectionText = info.selectionText ?? '';
   const menuItemId = String(info.menuItemId);
 
@@ -118,14 +123,14 @@ function handleContextMenuClick(
   // (including error messages from failed validation).
   chrome.scripting
     .executeScript({
-      target: { tabId },
+      target: { tabId, frameIds: [frameId] },
       files: ['content.js'],
     })
     .then(async () => {
       // Content script is now injected. Send error and stop if input is invalid.
       if (!validation.valid) {
         const errorCode = validation.errorCode ?? 'INVALID_MESSAGE';
-        sendToContentScript(tabId, {
+        sendToContentScript(tabId, frameId, {
           type: 'SHOW_ERROR',
           payload: {
             errorCode,
@@ -142,7 +147,7 @@ function handleContextMenuClick(
       // Translate: hand off to the content script, which runs the
       // translate-and-show-result flow itself.
       if (resolvedAction.action === 'translate' && resolvedAction.targetLanguage !== undefined) {
-        sendToContentScript(tabId, {
+        sendToContentScript(tabId, frameId, {
           type: 'START_TRANSLATE',
           payload: {
             originalText: selectionText,
@@ -156,7 +161,7 @@ function handleContextMenuClick(
       // Reformulate: hand off to the content script, which runs the
       // reformulate-and-show-result flow itself.
       if (resolvedAction.action === 'reformulate' && resolvedAction.tone !== undefined) {
-        sendToContentScript(tabId, {
+        sendToContentScript(tabId, frameId, {
           type: 'START_REFORMULATE',
           payload: {
             originalText: selectionText,
@@ -177,7 +182,7 @@ function handleContextMenuClick(
           provider: settings.provider,
         },
       };
-      sendToContentScript(tabId, loadingMsg);
+      sendToContentScript(tabId, frameId, loadingMsg);
 
       // Dispatch to the correct task. By this point the reformulate and
       // translate branches have already returned, so action is always 'correct'.
@@ -206,7 +211,7 @@ function handleContextMenuClick(
             : {}),
         },
       };
-      sendToContentScript(tabId, resultMsg);
+      sendToContentScript(tabId, frameId, resultMsg);
     })
     .catch((error: unknown) => {
       // If this is a validation error, SHOW_ERROR was already sent above -- do not re-send.
@@ -218,7 +223,7 @@ function handleContextMenuClick(
       }
       console.error('[service-worker] Context menu action failed:', error);
       const errorCode = classifyError(error);
-      sendToContentScript(tabId, {
+      sendToContentScript(tabId, frameId, {
         type: 'SHOW_ERROR',
         payload: {
           errorCode,
@@ -242,8 +247,14 @@ chrome.contextMenus.onClicked.addListener(handleContextMenuClick);
 // Helpers
 // ============================================================
 
-function sendToContentScript(tabId: number, message: ServiceWorkerToContentScriptMessage): void {
-  chrome.tabs.sendMessage(tabId, message).catch((error: unknown) => {
+function sendToContentScript(
+  tabId: number,
+  frameId: number,
+  message: ServiceWorkerToContentScriptMessage,
+): void {
+  // Target the specific frame the action originated in, so the message reaches
+  // the content script injected into that frame (which may be an iframe).
+  chrome.tabs.sendMessage(tabId, message, { frameId }).catch((error: unknown) => {
     console.warn('[service-worker] Failed to send message to content script:', error);
   });
 }
