@@ -2,8 +2,8 @@
 // Shadow DOM overlay for loading, result, and error states.
 // Only one overlay exists at a time -- creating a new one removes any existing one.
 
-import type { ActionType, ErrorCode } from '../shared/types.ts';
-import { COLORS } from '../shared/constants.ts';
+import type { ActionType, ErrorCode, ReformulateTone } from '../shared/types.ts';
+import { COLORS, REFORMULATE_TONE_LABELS } from '../shared/constants.ts';
 import { ERROR_COLORS } from '../shared/errors.ts';
 
 // ============================================================
@@ -17,6 +17,8 @@ export interface OverlayResultData {
   originalText: string;
   resultText: string;
   targetLanguage?: string;
+  /** Reformulate tone, present only when action is 'reformulate'. */
+  tone?: ReformulateTone;
   /** Whether the selection can be edited in place (Replace/Append apply). */
   editable: boolean;
   /** Model identifier reported by the LLM response. */
@@ -60,11 +62,19 @@ export function showLoading(
   action: ActionType,
   _originalText: string,
   provider: import('../shared/types.ts').LLMProvider = 'ollama',
+  _tone?: ReformulateTone,
 ): void {
   const position = getSelectionPosition();
   const root = createOrReplaceOverlay();
   const providerLabel = provider === 'openai' ? 'OpenAI' : 'Ollama';
-  const verb = action === 'correct' ? 'Correcting' : 'Translating';
+  let verb: string;
+  if (action === 'correct') {
+    verb = 'Correcting';
+  } else if (action === 'reformulate') {
+    verb = 'Reformulating';
+  } else {
+    verb = 'Translating';
+  }
   renderLoading(root, `${verb}…`, `Processing with ${providerLabel}…`);
   positionOverlay(currentHostElement!, position);
 }
@@ -179,7 +189,13 @@ function renderResult(
   resultBlock.className = 'ct-result';
   const resultLabel = document.createElement('span');
   resultLabel.className = 'ct-result-label';
-  resultLabel.textContent = data.action === 'correct' ? 'Corrected' : 'Translation';
+  if (data.action === 'correct') {
+    resultLabel.textContent = 'Corrected';
+  } else if (data.action === 'reformulate') {
+    resultLabel.textContent = 'Reformulated';
+  } else {
+    resultLabel.textContent = 'Translation';
+  }
   const resultText = document.createElement('span');
   resultText.textContent = data.resultText;
   resultBlock.appendChild(resultLabel);
@@ -438,6 +454,13 @@ function removeKeyboardHandler(): void {
 
 function buildResultTitle(data: OverlayResultData): string {
   if (data.action === 'correct') return 'Correction';
+  if (data.action === 'reformulate') {
+    // 'keep' tone gets a generic title to avoid redundancy; other tones get the label.
+    if (data.tone && data.tone !== 'keep') {
+      return `Reformulated (${REFORMULATE_TONE_LABELS[data.tone]})`;
+    }
+    return 'Reformulation';
+  }
   if (data.targetLanguage) return `Translation to ${data.targetLanguage}`;
   return 'Translation';
 }

@@ -2,9 +2,9 @@
 // Content script entry point.
 // Receives messages from the service worker and manages the overlay lifecycle.
 // For grammar correction the service worker drives loading -> result; for
-// translation the service worker hands off via START_TRANSLATE and this script
-// runs the translate-and-show-result flow (the source language is auto-detected
-// by the model during the translation call).
+// translation and reformulation the service worker hands off via START_TRANSLATE
+// / START_REFORMULATE and this script runs the full flow (source language is
+// auto-detected by the model during the translation call).
 
 import type {
   ServiceWorkerToContentScriptMessage,
@@ -12,6 +12,7 @@ import type {
   SuccessResponse,
   ErrorResponse,
   SupportedLanguage,
+  ReformulateTone,
 } from '../shared/messages.ts';
 import {
   showLoading,
@@ -125,6 +126,17 @@ function handleMessage(message: ServiceWorkerToContentScriptMessage): void {
       });
       break;
 
+    case 'START_REFORMULATE':
+      runReformulateFlow(
+        message.payload.originalText,
+        message.payload.tone,
+        message.payload.keepTerminology,
+        message.payload.provider,
+      ).catch((err: unknown) => {
+        console.error('[content] reformulate flow failed:', err);
+      });
+      break;
+
     default: {
       const _exhaustive: never = message;
       console.warn('[content] Unhandled message type:', _exhaustive);
@@ -214,6 +226,88 @@ async function runTranslateFlow(
 }
 
 // ============================================================
+// Reformulate Flow
+// ============================================================
+
+/**
+ * Reformulate the selected text and render the result.
+ * Modelled exactly on runTranslateFlow.
+ * Replace/Append act on the captured selection when editable.
+ */
+async function runReformulateFlow(
+  originalText: string,
+  tone: ReformulateTone,
+  keepTerminology: boolean,
+  provider: import('../shared/types.ts').LLMProvider = 'ollama',
+): Promise<void> {
+  // Capture the selection before the overlay is shown so Replace/Append can
+  // act on the original text field.
+  const target = captureSelectionTarget();
+
+  showLoading('reformulate', originalText, provider, tone);
+
+  let response: ServiceWorkerResponse;
+  try {
+    response = (await chrome.runtime.sendMessage({
+      type: 'REFORMULATE',
+      payload: { text: originalText, tone, keepTerminology },
+    })) as ServiceWorkerResponse;
+  } catch (err) {
+    console.error('[content] reformulate request failed:', err);
+    showError({
+      errorCode: 'OLLAMA_UNREACHABLE',
+      errorMessage: 'Could not reach the extension service worker.',
+    });
+    return;
+  }
+
+  if (isErrorResponse(response)) {
+    showError({ errorCode: response.errorCode, errorMessage: response.error });
+    return;
+  }
+  if (!isSuccessResponse(response)) {
+    showError({
+      errorCode: 'UNEXPECTED_RESPONSE',
+      errorMessage: 'Unexpected response from the extension service worker.',
+    });
+    return;
+  }
+
+  const reformulated = response.result;
+
+  // Auto-copy so the reformulation is immediately pasteable.
+  await copyResultToClipboard(reformulated);
+
+  showResult(
+    {
+      action: 'reformulate',
+      tone,
+      originalText,
+      resultText: reformulated,
+      editable: isEditableTarget(target),
+      model: response.model,
+      totalTokens: response.totalTokens,
+      elapsedMs: response.elapsedMs,
+    },
+    {
+      onReplace: (text: string) => {
+        replaceCaptured(target, text).catch((e: unknown) => {
+          console.error('[content] replace failed:', e);
+        });
+      },
+      onAppend: (text: string) => {
+        appendCaptured(target, text).catch((e: unknown) => {
+          console.error('[content] append failed:', e);
+        });
+      },
+      onReject: () => {
+        // No action needed.
+      },
+    },
+  );
+}
+
+// ============================================================
 // Response Type Guards
 // ============================================================
 
@@ -238,6 +332,7 @@ function isServiceWorkerMessage(msg: unknown): msg is ServiceWorkerToContentScri
     type === 'SHOW_RESULT' ||
     type === 'SHOW_ERROR' ||
     type === 'DISMISS_OVERLAY' ||
-    type === 'START_TRANSLATE'
+    type === 'START_TRANSLATE' ||
+    type === 'START_REFORMULATE'
   );
 }

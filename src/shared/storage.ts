@@ -2,7 +2,7 @@
 // Type-safe storage abstraction over chrome.storage.local.
 
 import type { ExtensionSettings } from './types.ts';
-import { DEFAULT_SETTINGS, AVAILABLE_OPENAI_MODELS, DEFAULT_OPENAI_MODEL } from './constants.ts';
+import { DEFAULT_SETTINGS, AVAILABLE_OPENAI_MODELS, DEFAULT_OPENAI_MODEL, REFORMULATE_TONES } from './constants.ts';
 
 // ============================================================
 // Storage Schema
@@ -38,6 +38,13 @@ export async function getSettings(): Promise<ExtensionSettings> {
   }
   if (typeof merged.openaiConsentAcknowledged !== 'boolean') {
     merged.openaiConsentAcknowledged = false;
+  }
+  // Defense-in-depth: coerce reformulate fields to valid values.
+  if (typeof merged.keepTerminology !== 'boolean') {
+    merged.keepTerminology = true;
+  }
+  if (!REFORMULATE_TONES.includes(merged.defaultReformulateTone)) {
+    merged.defaultReformulateTone = 'keep';
   }
 
   return merged;

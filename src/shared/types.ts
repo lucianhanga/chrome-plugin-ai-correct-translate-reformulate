@@ -7,7 +7,13 @@
 
 export type SupportedLanguage = 'English' | 'German' | 'Romanian';
 
-export type ActionType = 'correct' | 'translate';
+export type ActionType = 'correct' | 'translate' | 'reformulate';
+
+// ============================================================
+// Reformulate Types
+// ============================================================
+
+export type ReformulateTone = 'keep' | 'professional' | 'friendly' | 'natural';
 
 // ============================================================
 // Provider Types
@@ -31,6 +37,10 @@ export interface ExtensionSettings {
   openaiModel: OpenAIModel;             // default 'gpt-5-nano'
   openaiApiKey: string;                 // default '' (empty = not configured)
   openaiConsentAcknowledged: boolean;   // one-time egress consent flag; default false
+
+  // Reformulate settings
+  keepTerminology: boolean;             // keep-terminology checkbox state; default true
+  defaultReformulateTone: ReformulateTone; // last-used reformulate tone; default 'keep'
 }
 
 // ============================================================

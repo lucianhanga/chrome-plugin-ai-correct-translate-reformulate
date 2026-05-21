@@ -197,6 +197,51 @@ describe('ResultDisplay', () => {
 });
 
 // ============================================================
+// ToneSelector
+// ============================================================
+
+describe('ToneSelector', () => {
+  it('renders all four tone options', async () => {
+    const { ToneSelector } = await import('../../src/popup/components/ToneSelector.tsx');
+
+    const { container } = render(
+      <ToneSelector value="keep" onChange={() => undefined} />,
+    );
+
+    const options = within(container).getAllByRole('option') as HTMLOptionElement[];
+    const values = options.map((o) => o.value);
+    expect(values).toContain('keep');
+    expect(values).toContain('professional');
+    expect(values).toContain('friendly');
+    expect(values).toContain('natural');
+    expect(values).toHaveLength(4);
+  });
+
+  it('shows the correct selected value', async () => {
+    const { ToneSelector } = await import('../../src/popup/components/ToneSelector.tsx');
+
+    const { container } = render(
+      <ToneSelector value="professional" onChange={() => undefined} />,
+    );
+
+    const select = within(container).getByRole('combobox') as HTMLSelectElement;
+    expect(select.value).toBe('professional');
+  });
+
+  it('calls onChange with the selected tone when changed', async () => {
+    const { ToneSelector } = await import('../../src/popup/components/ToneSelector.tsx');
+
+    let received = '';
+    const { container } = render(
+      <ToneSelector value="keep" onChange={(v) => { received = v; }} />,
+    );
+
+    fireEvent.change(within(container).getByRole('combobox'), { target: { value: 'natural' } });
+    expect(received).toBe('natural');
+  });
+});
+
+// ============================================================
 // QuickAction -- provider-aware loading text and result metadata
 // ============================================================
 
@@ -211,7 +256,12 @@ describe('QuickAction', () => {
 
     const { QuickAction } = await import('../../src/popup/components/QuickAction.tsx');
     const { container } = render(
-      <QuickAction defaultTargetLanguage="English" provider="ollama" />,
+      <QuickAction
+        defaultTargetLanguage="English"
+        provider="ollama"
+        defaultReformulateTone="keep"
+        keepTerminology={true}
+      />,
     );
 
     fireEvent.change(within(container).getByPlaceholderText(/Paste or type/i), {
@@ -232,7 +282,12 @@ describe('QuickAction', () => {
 
     const { QuickAction } = await import('../../src/popup/components/QuickAction.tsx');
     const { container } = render(
-      <QuickAction defaultTargetLanguage="English" provider="openai" />,
+      <QuickAction
+        defaultTargetLanguage="English"
+        provider="openai"
+        defaultReformulateTone="keep"
+        keepTerminology={true}
+      />,
     );
 
     fireEvent.change(within(container).getByPlaceholderText(/Paste or type/i), {
@@ -256,7 +311,12 @@ describe('QuickAction', () => {
 
     const { QuickAction } = await import('../../src/popup/components/QuickAction.tsx');
     const { container } = render(
-      <QuickAction defaultTargetLanguage="English" provider="ollama" />,
+      <QuickAction
+        defaultTargetLanguage="English"
+        provider="ollama"
+        defaultReformulateTone="keep"
+        keepTerminology={true}
+      />,
     );
 
     fireEvent.change(within(container).getByPlaceholderText(/Paste or type/i), {
@@ -268,6 +328,134 @@ describe('QuickAction', () => {
     expect(meta).toHaveTextContent('qwen3:14b');
     expect(meta).toHaveTextContent('142 tokens');
     expect(meta).toHaveTextContent('2.4 s');
+  });
+
+  it('renders the Reformulate button', async () => {
+    const { QuickAction } = await import('../../src/popup/components/QuickAction.tsx');
+    const { container } = render(
+      <QuickAction
+        defaultTargetLanguage="English"
+        provider="ollama"
+        defaultReformulateTone="keep"
+        keepTerminology={true}
+      />,
+    );
+    expect(within(container).getByRole('button', { name: /^Reformulate$/i })).toBeInTheDocument();
+  });
+
+  it('renders the ToneSelector with the default tone', async () => {
+    const { QuickAction } = await import('../../src/popup/components/QuickAction.tsx');
+    const { container } = render(
+      <QuickAction
+        defaultTargetLanguage="English"
+        provider="ollama"
+        defaultReformulateTone="professional"
+        keepTerminology={true}
+      />,
+    );
+    // The tone select should be present and have 'professional' as selected value.
+    const selects = within(container).getAllByRole('combobox') as HTMLSelectElement[];
+    const toneSelect = selects.find((s) => s.value === 'professional');
+    expect(toneSelect).toBeDefined();
+  });
+
+  it('sends SAVE_SETTINGS when the tone is changed', async () => {
+    const { chromeMock } = await import('../mocks/chrome.ts');
+    chromeMock.runtime.sendMessage.mockResolvedValue({ success: true });
+
+    const { QuickAction } = await import('../../src/popup/components/QuickAction.tsx');
+    const { container } = render(
+      <QuickAction
+        defaultTargetLanguage="English"
+        provider="ollama"
+        defaultReformulateTone="keep"
+        keepTerminology={true}
+      />,
+    );
+
+    // Find the tone selector (value 'keep') and change it to 'friendly'.
+    const selects = within(container).getAllByRole('combobox') as HTMLSelectElement[];
+    const toneSelect = selects.find((s) => s.value === 'keep');
+    fireEvent.change(toneSelect!, { target: { value: 'friendly' } });
+
+    await waitFor(() => {
+      expect(chromeMock.runtime.sendMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'SAVE_SETTINGS',
+          payload: expect.objectContaining({
+            settings: expect.objectContaining({ defaultReformulateTone: 'friendly' }),
+          }),
+        }),
+      );
+    });
+  });
+
+  it('sends SAVE_SETTINGS when the keep-terminology checkbox is toggled', async () => {
+    const { chromeMock } = await import('../mocks/chrome.ts');
+    chromeMock.runtime.sendMessage.mockResolvedValue({ success: true });
+
+    const { QuickAction } = await import('../../src/popup/components/QuickAction.tsx');
+    const { container } = render(
+      <QuickAction
+        defaultTargetLanguage="English"
+        provider="ollama"
+        defaultReformulateTone="keep"
+        keepTerminology={true}
+      />,
+    );
+
+    const checkbox = container.querySelector('input[type="checkbox"]') as HTMLInputElement;
+    fireEvent.click(checkbox);
+
+    await waitFor(() => {
+      expect(chromeMock.runtime.sendMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'SAVE_SETTINGS',
+          payload: expect.objectContaining({
+            settings: expect.objectContaining({ keepTerminology: false }),
+          }),
+        }),
+      );
+    });
+  });
+
+  it('sends a REFORMULATE message when Reformulate is clicked', async () => {
+    const { chromeMock } = await import('../mocks/chrome.ts');
+    chromeMock.runtime.sendMessage.mockResolvedValue({
+      success: true,
+      result: 'Reformulated text.',
+      model: 'qwen3:14b',
+      totalTokens: 55,
+      elapsedMs: 900,
+    });
+
+    const { QuickAction } = await import('../../src/popup/components/QuickAction.tsx');
+    const { container } = render(
+      <QuickAction
+        defaultTargetLanguage="English"
+        provider="ollama"
+        defaultReformulateTone="professional"
+        keepTerminology={false}
+      />,
+    );
+
+    fireEvent.change(within(container).getByPlaceholderText(/Paste or type/i), {
+      target: { value: 'Original text.' },
+    });
+    fireEvent.click(within(container).getByRole('button', { name: /^Reformulate$/i }));
+
+    await waitFor(() => {
+      expect(chromeMock.runtime.sendMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'REFORMULATE',
+          payload: expect.objectContaining({
+            text: 'Original text.',
+            tone: 'professional',
+            keepTerminology: false,
+          }),
+        }),
+      );
+    });
   });
 });
 
@@ -306,6 +494,8 @@ describe('SettingsSection', () => {
     openaiModel: 'gpt-5-nano' as const,
     openaiApiKey: '',
     openaiConsentAcknowledged: false,
+    keepTerminology: true,
+    defaultReformulateTone: 'keep' as const,
   };
 
   it('renders the Ollama and OpenAI provider toggle buttons', async () => {

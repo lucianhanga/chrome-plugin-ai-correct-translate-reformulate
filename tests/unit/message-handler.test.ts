@@ -13,6 +13,7 @@ function llmResult(text: string, overrides: Partial<LLMResult> = {}): LLMResult 
 vi.mock('../../src/background/tasks.ts', () => ({
   correctGrammar: vi.fn(),
   translateText: vi.fn(),
+  reformulateText: vi.fn(),
 }));
 
 // Mock Ollama health check
@@ -416,6 +417,199 @@ describe('handleMessage: OpenAI key redaction and validation', () => {
     const response = await handleMessage({
       type: 'VALIDATE_OPENAI_KEY',
       payload: { key: 'sk-test', model: 'gpt-4o' },
+    });
+    expect(response).toMatchObject({ success: false, errorCode: 'INVALID_MESSAGE' });
+  });
+});
+
+// ============================================================
+// REFORMULATE message handler
+// ============================================================
+
+describe('handleMessage: REFORMULATE', () => {
+  // Helper: seed the Ollama provider into storage.
+  async function selectOllamaProvider(): Promise<void> {
+    await chrome.storage.local.set({
+      settings: {
+        ollamaEndpoint: 'http://localhost:11434',
+        model: 'qwen3:14b',
+        defaultTargetLanguage: 'English',
+        provider: 'ollama',
+        openaiModel: 'gpt-5-nano',
+        openaiApiKey: '',
+        openaiConsentAcknowledged: false,
+        keepTerminology: true,
+        defaultReformulateTone: 'keep',
+      },
+    });
+  }
+
+  // Helper: seed the OpenAI provider into storage.
+  async function selectOpenAIProvider(): Promise<void> {
+    await chrome.storage.local.set({
+      settings: {
+        ollamaEndpoint: 'http://localhost:11434',
+        model: 'qwen3:14b',
+        defaultTargetLanguage: 'English',
+        provider: 'openai',
+        openaiModel: 'gpt-5-nano',
+        openaiApiKey: 'sk-test',
+        openaiConsentAcknowledged: true,
+        keepTerminology: true,
+        defaultReformulateTone: 'keep',
+      },
+    });
+  }
+
+  it('REFORMULATE success with ollama provider', async () => {
+    await selectOllamaProvider();
+    const { getActiveClient } = await import('../../src/background/llm-client.ts');
+    vi.mocked(getActiveClient).mockReturnValue({ call: vi.fn(), healthCheck: vi.fn() });
+    // reformulateText is mocked at the tasks level; give it a resolved LLMResult.
+    const { reformulateText } = await import('../../src/background/tasks.ts');
+    vi.mocked(reformulateText).mockResolvedValue(
+      llmResult('Reformulated text.', { model: 'qwen3:14b', totalTokens: 80, elapsedMs: 1200 }),
+    );
+
+    const { handleMessage } = await import('../../src/background/message-handler.ts');
+    const response = await handleMessage({
+      type: 'REFORMULATE',
+      payload: { text: 'Original text.', tone: 'professional', keepTerminology: true },
+    });
+
+    expect(response).toMatchObject({
+      success: true,
+      result: 'Reformulated text.',
+      model: 'qwen3:14b',
+      totalTokens: 80,
+      elapsedMs: 1200,
+    });
+    expect(getActiveClient).toHaveBeenCalled();
+  });
+
+  it('REFORMULATE success with openai provider', async () => {
+    await selectOpenAIProvider();
+    const { getActiveClient } = await import('../../src/background/llm-client.ts');
+    vi.mocked(getActiveClient).mockReturnValue({ call: vi.fn(), healthCheck: vi.fn() });
+    const { reformulateText } = await import('../../src/background/tasks.ts');
+    vi.mocked(reformulateText).mockResolvedValue(
+      llmResult('Reformulated via OpenAI.', { model: 'gpt-5-nano', totalTokens: 45, elapsedMs: 600 }),
+    );
+
+    const { handleMessage } = await import('../../src/background/message-handler.ts');
+    const response = await handleMessage({
+      type: 'REFORMULATE',
+      payload: { text: 'Original text.', tone: 'friendly', keepTerminology: false },
+    });
+
+    expect(response).toMatchObject({
+      success: true,
+      result: 'Reformulated via OpenAI.',
+      model: 'gpt-5-nano',
+    });
+    expect(getActiveClient).toHaveBeenCalled();
+  });
+
+  it('REFORMULATE passes tone and keepTerminology through to reformulateText', async () => {
+    await selectOllamaProvider();
+    const { getActiveClient } = await import('../../src/background/llm-client.ts');
+    vi.mocked(getActiveClient).mockReturnValue({ call: vi.fn(), healthCheck: vi.fn() });
+    const { reformulateText } = await import('../../src/background/tasks.ts');
+    vi.mocked(reformulateText).mockResolvedValue(llmResult('ok'));
+
+    const { handleMessage } = await import('../../src/background/message-handler.ts');
+    await handleMessage({
+      type: 'REFORMULATE',
+      payload: { text: 'Some text.', tone: 'natural', keepTerminology: false },
+    });
+
+    // reformulateText is called with (client, text, tone, keepTerminology, options).
+    expect(reformulateText).toHaveBeenCalledWith(
+      expect.anything(),
+      'Some text.',
+      'natural',
+      false,
+      expect.any(Object),
+    );
+  });
+
+  it('REFORMULATE uses temperature 0.3 for keep tone', async () => {
+    await selectOllamaProvider();
+    const { getActiveClient } = await import('../../src/background/llm-client.ts');
+    vi.mocked(getActiveClient).mockReturnValue({ call: vi.fn(), healthCheck: vi.fn() });
+    const { reformulateText } = await import('../../src/background/tasks.ts');
+    vi.mocked(reformulateText).mockResolvedValue(llmResult('ok'));
+
+    const { handleMessage } = await import('../../src/background/message-handler.ts');
+    await handleMessage({
+      type: 'REFORMULATE',
+      payload: { text: 'Some text.', tone: 'keep', keepTerminology: true },
+    });
+
+    // The 5th argument to reformulateText is the options object including temperature.
+    expect(reformulateText).toHaveBeenCalledWith(
+      expect.anything(),
+      'Some text.',
+      'keep',
+      true,
+      expect.objectContaining({ temperature: 0.3 }),
+    );
+  });
+
+  it('REFORMULATE uses temperature 0.4 for non-keep tones', async () => {
+    await selectOllamaProvider();
+    const { getActiveClient } = await import('../../src/background/llm-client.ts');
+    vi.mocked(getActiveClient).mockReturnValue({ call: vi.fn(), healthCheck: vi.fn() });
+    const { reformulateText } = await import('../../src/background/tasks.ts');
+    vi.mocked(reformulateText).mockResolvedValue(llmResult('ok'));
+
+    const { handleMessage } = await import('../../src/background/message-handler.ts');
+    await handleMessage({
+      type: 'REFORMULATE',
+      payload: { text: 'Some text.', tone: 'professional', keepTerminology: true },
+    });
+
+    expect(reformulateText).toHaveBeenCalledWith(
+      expect.anything(),
+      'Some text.',
+      'professional',
+      true,
+      expect.objectContaining({ temperature: 0.4 }),
+    );
+  });
+
+  it('returns EMPTY_INPUT for REFORMULATE with empty text', async () => {
+    const { handleMessage } = await import('../../src/background/message-handler.ts');
+    const response = await handleMessage({
+      type: 'REFORMULATE',
+      payload: { text: '', tone: 'keep', keepTerminology: true },
+    });
+    expect(response).toMatchObject({ success: false, errorCode: 'EMPTY_INPUT' });
+  });
+
+  it('returns INPUT_TOO_LONG for REFORMULATE with oversized text', async () => {
+    const { handleMessage } = await import('../../src/background/message-handler.ts');
+    const response = await handleMessage({
+      type: 'REFORMULATE',
+      payload: { text: 'a'.repeat(10_001), tone: 'friendly', keepTerminology: true },
+    });
+    expect(response).toMatchObject({ success: false, errorCode: 'INPUT_TOO_LONG' });
+  });
+
+  it('returns INVALID_MESSAGE for a malformed REFORMULATE message (bad tone)', async () => {
+    const { handleMessage } = await import('../../src/background/message-handler.ts');
+    const response = await handleMessage({
+      type: 'REFORMULATE',
+      payload: { text: 'Some text.', tone: 'ultra-casual', keepTerminology: true },
+    });
+    expect(response).toMatchObject({ success: false, errorCode: 'INVALID_MESSAGE' });
+  });
+
+  it('returns INVALID_MESSAGE for a REFORMULATE message missing keepTerminology', async () => {
+    const { handleMessage } = await import('../../src/background/message-handler.ts');
+    const response = await handleMessage({
+      type: 'REFORMULATE',
+      payload: { text: 'Some text.', tone: 'keep' },
     });
     expect(response).toMatchObject({ success: false, errorCode: 'INVALID_MESSAGE' });
   });

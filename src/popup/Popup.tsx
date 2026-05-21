@@ -100,6 +100,8 @@ export function Popup(): React.ReactElement {
             <QuickAction
               defaultTargetLanguage={settings.defaultTargetLanguage}
               provider={settings.provider}
+              defaultReformulateTone={settings.defaultReformulateTone}
+              keepTerminology={settings.keepTerminology}
             />
           ) : (
             <div className="flex items-center justify-center py-6">
