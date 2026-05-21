@@ -1,0 +1,50 @@
+# Continuous integration: type-check, lint, unit tests, and build.
+#
+# Runs on every pull request to main and on every push to main, so each PR is
+# verified before merge and the README badge reflects the state of main.
+#
+# The end-to-end suite (pnpm test:e2e) is intentionally NOT run here: it drives
+# a real Chrome against a real local Ollama with the qwen3:14b model (~16 GB),
+# which does not fit a GitHub-hosted runner. The e2e suite is run locally --
+# see the "Testing" section of README.md.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  verify:
+    name: Type-check, lint, unit tests, build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Type-check
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Unit tests
+        run: pnpm test
+
+      - name: Build
+        run: pnpm build
