@@ -13,8 +13,7 @@
   ],
 
   "host_permissions": [
-    "http://localhost:11434/*",
-    "https://api.openai.com/*"
+    "<all_urls>"
   ],
 
   "background": {

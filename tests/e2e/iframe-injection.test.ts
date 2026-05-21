@@ -190,4 +190,49 @@ test.describe('Context menu: selection inside an iframe', () => {
     const after = await textarea.inputValue();
     expect(after.trim().length).toBeGreaterThan(0);
   });
+
+  test('content script injects into a cross-origin iframe (requires <all_urls>)', async ({
+    context,
+    testServerBaseUrl,
+  }) => {
+    // Webmail editors (GMX, ...) live in CROSS-ORIGIN iframes. activeTab does
+    // not grant injection into cross-origin sub-frames -- only the <all_urls>
+    // host permission does. This points the iframe at the other loopback host
+    // (127.0.0.1 vs localhost -- a different origin, same test server) and
+    // verifies the content script still injects and the overlay renders there.
+    const page = await context.newPage();
+    await page.goto(`${testServerBaseUrl}/iframe-host.html`);
+
+    // Re-point the iframe at the other loopback host -> a genuine cross-origin
+    // frame relative to the host page.
+    const base = new URL(testServerBaseUrl);
+    const altHost = base.hostname === 'localhost' ? '127.0.0.1' : 'localhost';
+    const crossOriginUrl = `${base.protocol}//${altHost}:${base.port}/iframe-editor.html`;
+    await page.evaluate((url: string) => {
+      (document.getElementById('editor-frame') as HTMLIFrameElement).src = url;
+    }, crossOriginUrl);
+
+    const sw = context.serviceWorkers().find((w) => w.url().includes('service-worker.js'));
+    if (!sw) throw new Error('Service worker not found');
+    const tabId = await getTabId(sw);
+
+    // Select text inside the cross-origin iframe (frameLocator auto-waits for
+    // the re-pointed frame to load).
+    const editor = page.frameLocator('#editor-frame');
+    const textarea = editor.locator('[data-testid="iframe-textarea"]');
+    await textarea.click();
+    await textarea.selectText();
+    const text = await textarea.inputValue();
+    expect(text.length).toBeGreaterThan(0);
+
+    const frameId = await getEditorFrameId(sw, tabId);
+    expect(frameId).toBeGreaterThan(0);
+
+    await simulateContextMenuClick(sw, tabId, frameId, 'correct_grammar', text);
+
+    // The overlay must render inside the cross-origin iframe -- proof that
+    // executeScript into a cross-origin frame succeeded, which is only possible
+    // with the <all_urls> host permission.
+    await expect(editor.locator('[data-ct-overlay-host]')).toBeAttached({ timeout: 15_000 });
+  });
 });
