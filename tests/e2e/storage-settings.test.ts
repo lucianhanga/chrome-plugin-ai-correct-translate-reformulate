@@ -15,7 +15,9 @@
 // Each test gets its own isolated persistent context (fresh chrome.storage.local)
 // so settings from one test cannot bleed into another.
 
-import { test, expect } from './fixtures/extension-fixture';
+import { test, expect, providerInfo } from './fixtures/extension-fixture';
+
+const isOllama = providerInfo.provider === 'ollama';
 
 // ---------------------------------------------------------------------------
 // Suite: Default settings
@@ -42,12 +44,14 @@ test.describe('Settings: defaults on first run', () => {
   });
 
   test('popup shows default endpoint in settings section', async ({ openPopup }) => {
+    test.skip(!isOllama, 'Skipped: Ollama endpoint input only visible when Ollama is the active provider');
     const popup = await openPopup();
     await popup.locator('[data-testid="settings-toggle"]').click();
     await expect(popup.locator('input[type="url"]')).toHaveValue('http://localhost:11434');
   });
 
   test('popup shows default model in settings section', async ({ openPopup }) => {
+    test.skip(!isOllama, 'Skipped: Ollama model-select default only visible when Ollama is the active provider');
     const popup = await openPopup();
     await popup.locator('[data-testid="settings-toggle"]').click();
     // Target the model select specifically using data-testid to avoid matching

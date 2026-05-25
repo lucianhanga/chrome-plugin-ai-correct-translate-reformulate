@@ -467,17 +467,22 @@ describe('StatusIndicator', () => {
   it('renders without crashing', async () => {
     const { StatusIndicator } = await import('../../src/popup/components/StatusIndicator.tsx');
 
-    const { container } = render(<StatusIndicator />);
-    // Should render some element
+    const { container } = render(<StatusIndicator provider="ollama" />);
     expect(container.firstChild).toBeTruthy();
   });
 
-  it('initially shows "Checking Ollama..." status', async () => {
+  it('initially shows "Checking Ollama..." when provider is ollama', async () => {
     const { StatusIndicator } = await import('../../src/popup/components/StatusIndicator.tsx');
 
-    const { container } = render(<StatusIndicator />);
-    // Before the async health check resolves, it shows "checking" state
-    expect(within(container).getByText(/checking/i)).toBeInTheDocument();
+    const { container } = render(<StatusIndicator provider="ollama" />);
+    expect(within(container).getByText(/Checking Ollama/i)).toBeInTheDocument();
+  });
+
+  it('initially shows "Checking OpenAI..." when provider is openai', async () => {
+    const { StatusIndicator } = await import('../../src/popup/components/StatusIndicator.tsx');
+
+    const { container } = render(<StatusIndicator provider="openai" />);
+    expect(within(container).getByText(/Checking OpenAI/i)).toBeInTheDocument();
   });
 });
 

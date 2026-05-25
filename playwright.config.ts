@@ -35,9 +35,11 @@ const DIST_TEST_PATH = resolve(import.meta.dirname, 'dist-test');
 
 export default defineConfig({
   testDir: './tests/e2e',
-  // One file at a time. Extension state is shared across tests in the same
-  // browser context; running files in parallel can produce race conditions.
-  workers: 1,
+  // Up to 5 files in parallel. Each test gets its own isolated browser context
+  // with a unique Chrome profile directory, so there are no shared-state races.
+  // The extension ID is resolved once by globalSetup and written to a file that
+  // all workers read — it is deterministic (same path → same ID) across profiles.
+  workers: 5,
   // fullyParallel: false means tests within a file are also run sequentially
   // (important for the overlay singleton -- only one overlay at a time).
   fullyParallel: false,

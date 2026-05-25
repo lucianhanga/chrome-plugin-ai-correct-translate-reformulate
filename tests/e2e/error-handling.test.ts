@@ -31,12 +31,13 @@
 //   ('http://localhost/*' in the test build) allow chrome.scripting.executeScript
 //   to inject the content script without needing activeTab.
 
-import { test, expect } from './fixtures/extension-fixture';
+import { test, expect, providerInfo } from './fixtures/extension-fixture';
 
 const DEAD_ENDPOINT = 'http://localhost:19999';
 const REAL_ENDPOINT = 'http://localhost:11434';
 const REAL_MODEL = 'qwen3:14b';
 const BOGUS_MODEL = 'nonexistent-model-xyz:99b';
+const isOllama = providerInfo.provider === 'ollama';
 
 // ---------------------------------------------------------------------------
 // Shared helpers
@@ -163,6 +164,7 @@ async function simulateContextMenuClick(
 
 test.describe('Error handling: OLLAMA_UNREACHABLE', () => {
   test('overlay shows error when the configured endpoint is a dead port', async ({ context, testServerBaseUrl }) => {
+    test.skip(!isOllama, 'Skipped: OLLAMA_UNREACHABLE dead-port test requires Ollama');
     const sw = context.serviceWorkers().find((w) => w.url().includes('service-worker.js'));
     if (!sw) throw new Error('Service worker not found');
 
@@ -198,6 +200,7 @@ test.describe('Error handling: OLLAMA_UNREACHABLE', () => {
   });
 
   test('translate overlay shows error when the configured endpoint is a dead port', async ({ context, testServerBaseUrl }) => {
+    test.skip(!isOllama, 'Skipped: OLLAMA_UNREACHABLE dead-port test requires Ollama');
     // The translate context-menu path runs runTranslateFlow inside the content
     // script: it shows the "Translating…" loading overlay, then the TRANSLATE
     // request fails against the dead port and the content script transitions the
@@ -237,6 +240,7 @@ test.describe('Error handling: OLLAMA_UNREACHABLE', () => {
     extensionId,
     context,
   }) => {
+    test.skip(!isOllama, 'Skipped: OLLAMA_UNREACHABLE dead-port test requires Ollama');
     // Configure the dead endpoint from a throwaway popup page.
     const configPage = await context.newPage();
     await configPage.goto(`chrome-extension://${extensionId}/popup.html`);
@@ -275,6 +279,7 @@ test.describe('Error handling: OLLAMA_UNREACHABLE', () => {
 
 test.describe('Error handling: MODEL_NOT_FOUND', () => {
   test('overlay shows error when the configured model does not exist in Ollama', async ({ context, testServerBaseUrl }) => {
+    test.skip(!isOllama, 'Skipped: MODEL_NOT_FOUND via bogus Ollama model name requires Ollama');
     const sw = context.serviceWorkers().find((w) => w.url().includes('service-worker.js'));
     if (!sw) throw new Error('Service worker not found');
 
@@ -314,6 +319,7 @@ test.describe('Error handling: MODEL_NOT_FOUND', () => {
     extensionId,
     context,
   }) => {
+    test.skip(!isOllama, 'Skipped: model-not-found health check requires Ollama');
     // Configure a bogus model name.
     const configPage = await context.newPage();
     await configPage.goto(`chrome-extension://${extensionId}/popup.html`);
@@ -504,11 +510,10 @@ test.describe('Error handling: service worker message validation', () => {
       return chrome.runtime.sendMessage({ type: 'HEALTH_CHECK' });
     });
 
-    // With real Ollama running and the correct model, this should be fully reachable.
+    // Both Ollama and OpenAI are verified reachable by global-setup preconditions.
     expect((response as Record<string, unknown>).success).toBe(true);
     expect(typeof (response as Record<string, unknown>).reachable).toBe('boolean');
     expect(typeof (response as Record<string, unknown>).modelFound).toBe('boolean');
-    // Both should be true given global-setup preconditions.
     expect((response as Record<string, unknown>).reachable).toBe(true);
     expect((response as Record<string, unknown>).modelFound).toBe(true);
   });

@@ -39,10 +39,11 @@
 // Timeouts: per-test timeout is 180 s (playwright.config.ts). Individual
 // waitFor calls that involve real Ollama inference use 120 s.
 
-import { test, expect } from './fixtures/extension-fixture';
+import { test, expect, providerInfo } from './fixtures/extension-fixture';
 
 const DEAD_ENDPOINT = 'http://localhost:19999';
 const REAL_ENDPOINT = 'http://localhost:11434';
+const isOllama = providerInfo.provider === 'ollama';
 
 // ---------------------------------------------------------------------------
 // Helper: point the extension at a dead port via SAVE_SETTINGS.
@@ -99,32 +100,30 @@ test.describe('Popup: mount and layout', () => {
 // ---------------------------------------------------------------------------
 
 test.describe('Popup: status indicator', () => {
-  test('shows green "connected" status when Ollama is running with the model', async ({ openPopup }) => {
-    // Real Ollama is running (verified by global-setup).
-    // The popup performs a health check on mount and updates the status indicator.
+  test('shows green "connected" status when the active provider is reachable', async ({ openPopup }) => {
     const popup = await openPopup();
-    await expect(popup.locator('text=Ollama connected')).toBeVisible({ timeout: 15_000 });
+    const connectedText = isOllama ? 'Ollama connected' : 'OpenAI connected';
+    await expect(popup.locator(`text=${connectedText}`)).toBeVisible({ timeout: 15_000 });
   });
 
-  test('shows red "unreachable" status when the configured endpoint is a dead port', async ({ openPopup, extensionId, context }) => {
-    // Open a popup page and point the extension at a dead port.
+  test('shows red "unreachable" status when the configured Ollama endpoint is a dead port', async ({ openPopup, extensionId, context }) => {
+    test.skip(!isOllama, 'Skipped: dead-port test is Ollama-specific (OpenAI has no configurable endpoint)');
+
     const configPage = await context.newPage();
     await configPage.goto(`chrome-extension://${extensionId}/popup.html`);
     await configPage.waitForSelector('h1', { timeout: 8_000 });
     await setEndpoint(configPage, DEAD_ENDPOINT);
     await configPage.close();
 
-    // Open a fresh popup -- it reads settings on mount, so it will use the dead endpoint.
     const popup = await openPopup();
     await expect(popup.locator('text=Ollama unreachable')).toBeVisible({ timeout: 15_000 });
 
-    // Restore the real endpoint so subsequent tests are not affected.
     await setEndpoint(popup, REAL_ENDPOINT);
   });
 
-  test('shows yellow "model-missing" status when the configured model does not exist', async ({ openPopup, extensionId, context }) => {
-    // Point the extension at the real Ollama but configure a nonexistent model.
-    // The health check calls /api/tags and checks whether the configured model is listed.
+  test('shows yellow "model-missing" status when the configured Ollama model does not exist', async ({ openPopup, extensionId, context }) => {
+    test.skip(!isOllama, 'Skipped: model-missing state is Ollama-specific (OpenAI model list is fixed)');
+
     const configPage = await context.newPage();
     await configPage.goto(`chrome-extension://${extensionId}/popup.html`);
     await configPage.waitForSelector('h1', { timeout: 8_000 });
@@ -136,14 +135,11 @@ test.describe('Popup: status indicator', () => {
     });
     await configPage.close();
 
-    // Open a fresh popup -- the health check will find Ollama reachable but the
-    // configured model absent, producing the yellow "model not found" state.
     const popup = await openPopup();
     await expect(
       popup.locator('text=Ollama connected, model not found'),
     ).toBeVisible({ timeout: 15_000 });
 
-    // Restore the real model name.
     await popup.evaluate(async () => {
       await chrome.runtime.sendMessage({
         type: 'SAVE_SETTINGS',
@@ -258,6 +254,7 @@ test.describe('Popup: Quick Action -- Correct', () => {
     extensionId,
     context,
   }) => {
+    test.skip(!isOllama, 'Skipped: dead-port error test is Ollama-specific (OpenAI has no configurable endpoint)');
     // Point the extension at a dead port before opening the popup.
     const configPage = await context.newPage();
     await configPage.goto(`chrome-extension://${extensionId}/popup.html`);
@@ -405,6 +402,7 @@ test.describe('Popup: Settings section', () => {
   });
 
   test('settings section shows Ollama Endpoint input with default value', async ({ openPopup }) => {
+    test.skip(!isOllama, 'Skipped: Ollama endpoint input only visible when Ollama is the active provider');
     const popup = await openPopup();
     await popup.locator('[data-testid="settings-toggle"]').click();
     await expect(popup.locator('input[type="url"]')).toBeVisible();
@@ -412,6 +410,7 @@ test.describe('Popup: Settings section', () => {
   });
 
   test('settings section shows Model dropdown with known models', async ({ openPopup }) => {
+    test.skip(!isOllama, 'Skipped: Ollama model dropdown only visible when Ollama is the active provider');
     const popup = await openPopup();
     await popup.locator('[data-testid="settings-toggle"]').click();
     await expect(
@@ -443,6 +442,7 @@ test.describe('Popup: Settings section -- OpenAI provider', () => {
   });
 
   test('switching to OpenAI shows a one-time data-egress consent dialog', async ({ openPopup }) => {
+    test.skip(!isOllama, 'Skipped: consent dialog only appears on first Ollama→OpenAI switch; OpenAI runs start with consent pre-acknowledged');
     const popup = await openPopup();
     await popup.locator('[data-testid="settings-toggle"]').click();
     await popup.getByRole('button', { name: /^OpenAI$/i }).click();
@@ -453,6 +453,7 @@ test.describe('Popup: Settings section -- OpenAI provider', () => {
   });
 
   test('cancelling the consent dialog leaves the provider on Ollama', async ({ openPopup }) => {
+    test.skip(!isOllama, 'Skipped: consent cancel flow requires Ollama as base provider; OpenAI runs start with consent pre-acknowledged');
     const popup = await openPopup();
     await popup.locator('[data-testid="settings-toggle"]').click();
     await popup.getByRole('button', { name: /^OpenAI$/i }).click();
@@ -466,6 +467,7 @@ test.describe('Popup: Settings section -- OpenAI provider', () => {
   });
 
   test('confirming consent reveals the masked OpenAI API key field', async ({ openPopup }) => {
+    test.skip(!isOllama, 'Skipped: consent confirm flow requires Ollama as base provider; OpenAI runs start with consent pre-acknowledged');
     const popup = await openPopup();
     await popup.locator('[data-testid="settings-toggle"]').click();
     await popup.getByRole('button', { name: /^OpenAI$/i }).click();

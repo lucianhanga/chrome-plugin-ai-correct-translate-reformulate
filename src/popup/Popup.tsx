@@ -86,7 +86,7 @@ export function Popup(): React.ReactElement {
             </span>
           )}
         </div>
-        <StatusIndicator refreshKey={statusRefreshKey} />
+        <StatusIndicator refreshKey={statusRefreshKey} provider={settings.provider} />
       </div>
 
       {/* Main content */}

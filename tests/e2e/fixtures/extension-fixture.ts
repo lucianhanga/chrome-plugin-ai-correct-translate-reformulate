@@ -4,18 +4,31 @@
 //   2. Exposes the resolved extension ID and a helper to open the popup page.
 //   3. Provides a helper page (test-page.html) served over HTTP for content
 //      script / overlay tests (file:// is not injectable without <all_urls>).
-//
-// Each test file should import { test, expect } from this module instead of
-// directly from @playwright/test.
+//   4. Exposes `activeProvider` so tests can skip provider-specific assertions.
+//   5. When the active provider is OpenAI, automatically seeds the extension's
+//      chrome.storage.local with the OpenAI settings after the service worker starts,
+//      so all LLM tests work without per-test provider setup.
 
 import { test as base, chromium, expect } from '@playwright/test';
-import type { BrowserContext, Page } from '@playwright/test';
+import type { BrowserContext, Page, Worker } from '@playwright/test';
 import { resolve } from 'path';
 import { readFileSync } from 'fs';
-import { EXT_ID_FILE, TEST_SERVER_PORT_FILE } from './global-setup';
+import { EXT_ID_FILE, TEST_SERVER_PORT_FILE, PROVIDER_INFO_FILE } from './global-setup';
+import type { ProviderInfo } from './global-setup';
 
-// Test build: same compiled JS as dist/ but manifest has http://localhost/*
 const DIST_TEST_PATH = resolve(process.cwd(), 'dist-test');
+
+// Read provider info written by globalSetup. Falls back to Ollama defaults so
+// the fixture is safe to import even outside a full test run (e.g. type-check).
+function readProviderInfo(): ProviderInfo {
+  try {
+    return JSON.parse(readFileSync(PROVIDER_INFO_FILE, 'utf8')) as ProviderInfo;
+  } catch {
+    return { provider: 'ollama', endpoint: 'http://localhost:11434', model: 'qwen3:14b' };
+  }
+}
+
+export const providerInfo = readProviderInfo();
 
 // Shape of the extended fixture.
 export interface ExtensionFixtures {
@@ -29,6 +42,31 @@ export interface ExtensionFixtures {
   openPopup: () => Promise<Page>;
   /** Base URL of the local HTTP server serving test pages (e.g. http://localhost:PORT). */
   testServerBaseUrl: string;
+  /** Active LLM provider for this test run ('ollama' or 'openai'). */
+  activeProvider: 'ollama' | 'openai';
+}
+
+// Configure the extension's chrome.storage.local with OpenAI settings.
+// Called once per context after the service worker is ready.
+async function seedOpenAISettings(sw: Worker): Promise<void> {
+  const apiKey = process.env['OPENAI_API_KEY'] ?? '';
+  const model = providerInfo.provider === 'openai' ? providerInfo.model : 'gpt-5-nano';
+  await sw.evaluate(
+    async ({ key, mdl }: { key: string; mdl: string }) => {
+      const result = await chrome.storage.local.get('settings');
+      const current = (result['settings'] as Record<string, unknown>) ?? {};
+      await chrome.storage.local.set({
+        settings: {
+          ...current,
+          provider: 'openai',
+          openaiApiKey: key,
+          openaiModel: mdl,
+          openaiConsentAcknowledged: true,
+        },
+      });
+    },
+    { key: apiKey, mdl: model },
+  );
 }
 
 export const test = base.extend<ExtensionFixtures>({
@@ -44,9 +82,12 @@ export const test = base.extend<ExtensionFixtures>({
     await use(`http://localhost:${port}`);
   },
 
+  // eslint-disable-next-line no-empty-pattern
+  activeProvider: async ({}, use) => {
+    await use(providerInfo.provider);
+  },
+
   context: async ({ extensionId: _id }, use) => {
-    // Each test gets its own isolated persistent context so settings / storage
-    // changes in one test do not bleed into the next.
     const userDataDir = resolve(
       process.cwd(),
       'test-results',
@@ -54,9 +95,6 @@ export const test = base.extend<ExtensionFixtures>({
     );
 
     const ctx = await chromium.launchPersistentContext(userDataDir, {
-      // headless:false + --headless=new: Chrome runs windowless via its new
-      // headless mode, which loads MV3 extensions. Playwright's headless:true
-      // path does not load extensions in a persistent context, so it stays false.
       headless: false,
       args: [
         `--disable-extensions-except=${DIST_TEST_PATH}`,
@@ -68,18 +106,21 @@ export const test = base.extend<ExtensionFixtures>({
       viewport: { width: 1280, height: 800 },
     });
 
-    // Wait for the service worker to register before yielding to the test.
-    let ready = false;
+    // Wait for the service worker to register.
+    let sw: Worker | undefined;
     for (let i = 0; i < 30; i++) {
-      const workers = ctx.serviceWorkers();
-      if (workers.some((w) => w.url().includes('service-worker.js'))) {
-        ready = true;
-        break;
-      }
+      sw = ctx.serviceWorkers().find((w) => w.url().includes('service-worker.js'));
+      if (sw) break;
       await new Promise<void>((r) => setTimeout(r, 300));
     }
-    if (!ready) {
+    if (!sw) {
       throw new Error('[fixture] Service worker did not register within 9 seconds.');
+    }
+
+    // When running with OpenAI, seed the extension's storage so every test
+    // in this context uses OpenAI without needing per-test setup.
+    if (providerInfo.provider === 'openai') {
+      await seedOpenAISettings(sw);
     }
 
     await use(ctx);
@@ -95,7 +136,6 @@ export const test = base.extend<ExtensionFixtures>({
     const open = async (): Promise<Page> => {
       const pg = await context.newPage();
       await pg.goto(`chrome-extension://${extensionId}/popup.html`);
-      // Wait for React to mount: the header "Correct & Translate" must be visible.
       await pg.waitForSelector('h1', { timeout: 8_000 });
       return pg;
     };

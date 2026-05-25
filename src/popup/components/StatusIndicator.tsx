@@ -1,27 +1,34 @@
 // src/popup/components/StatusIndicator.tsx
-// Displays a colored dot showing the Ollama connection and model status.
+// Displays a colored dot showing the LLM connection and model status.
 // Green = connected and model found.
 // Yellow = connected but model not found.
-// Red = Ollama unreachable.
+// Red = provider unreachable.
 
 import React, { useEffect, useState } from 'react';
 import type { HealthCheckResponse } from '../../shared/messages.ts';
+import type { LLMProvider } from '../../shared/types.ts';
 
 type StatusState = 'checking' | 'connected' | 'model-missing' | 'unreachable';
 
-const STATUS_CONFIG: Record<StatusState, { color: string; label: string }> = {
-  checking:      { color: '#45475a', label: 'Checking Ollama...' },
-  connected:     { color: '#22c55e', label: 'Ollama connected' },
-  'model-missing': { color: '#eab308', label: 'Ollama connected, model not found' },
-  unreachable:   { color: '#ef4444', label: 'Ollama unreachable' },
-};
+function buildStatusConfig(
+  provider: LLMProvider,
+): Record<StatusState, { color: string; label: string }> {
+  const name = provider === 'openai' ? 'OpenAI' : 'Ollama';
+  return {
+    checking:        { color: '#45475a', label: `Checking ${name}...` },
+    connected:       { color: '#22c55e', label: `${name} connected` },
+    'model-missing': { color: '#eab308', label: `${name} connected, model not found` },
+    unreachable:     { color: '#ef4444', label: `${name} unreachable` },
+  };
+}
 
 interface StatusIndicatorProps {
   /** Re-check when this value changes (e.g., settings saved). */
   refreshKey?: number;
+  provider: LLMProvider;
 }
 
-export function StatusIndicator({ refreshKey = 0 }: StatusIndicatorProps): React.ReactElement {
+export function StatusIndicator({ refreshKey = 0, provider }: StatusIndicatorProps): React.ReactElement {
   const [status, setStatus] = useState<StatusState>('checking');
 
   useEffect(() => {
@@ -57,7 +64,7 @@ export function StatusIndicator({ refreshKey = 0 }: StatusIndicatorProps): React
     };
   }, [refreshKey]);
 
-  const config = STATUS_CONFIG[status];
+  const config = buildStatusConfig(provider)[status];
 
   return (
     <div className="flex items-center gap-2">

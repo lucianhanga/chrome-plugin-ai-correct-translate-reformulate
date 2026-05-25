@@ -5,6 +5,7 @@ import { resolve } from 'path';
 export default defineConfig({
   plugins: [react()],
   test: {
+    globalSetup: ['tests/setup/unit-global-setup.ts'],
     environment: 'node',
     globals: false,
     include: ['tests/unit/**/*.test.ts', 'tests/unit/**/*.test.tsx'],
