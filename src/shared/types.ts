@@ -56,6 +56,9 @@ export interface ExtensionSettings {
 
   // Summarize settings
   defaultSummarizeLength: SummarizeLength; // last-used summary length; default 'standard'
+
+  // In-page selection toolbar
+  toolbarAllSites: boolean; // show the selection toolbar on ALL sites (opt-in); default false
 }
 
 // ============================================================

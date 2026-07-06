@@ -1,7 +1,7 @@
 // src/background/context-menu.ts
 // Context menu registration and menu item ID to action mapping.
 
-import type { SupportedLanguage, ActionType, ReformulateTone, SummarizeLength } from '../shared/types.ts';
+import type { SupportedLanguage, ActionType, ReformulateTone, SummarizeLength, ExtensionSettings } from '../shared/types.ts';
 import { CONTEXT_MENU_IDS, LANGUAGE_FLAGS, LANGUAGE_DISPLAY_NAMES } from '../shared/constants.ts';
 import { getSettings } from '../shared/storage.ts';
 
@@ -242,6 +242,46 @@ export function resolveMenuAction(menuItemId: string): ResolvedMenuAction | null
     case CONTEXT_MENU_IDS.SUMMARIZE_DETAILED:
       return { action: 'summarize', length: 'detailed' };
     // Parent items, separators, and checkbox handled elsewhere -- return null.
+    default:
+      return null;
+  }
+}
+
+// ============================================================
+// Keyboard Command Resolver
+// ============================================================
+
+/**
+ * Command names declared in manifest.json under "commands". Kept here so the
+ * service worker and its tests share one source of truth.
+ */
+export const COMMAND_IDS = {
+  CORRECT_GRAMMAR: 'correct-grammar',
+  TRANSLATE_DEFAULT: 'translate-default',
+  REFORMULATE_DEFAULT: 'reformulate-default',
+} as const;
+
+/**
+ * Resolves a keyboard command name to an action. Unlike context-menu items,
+ * commands cannot carry per-language / per-tone parameters, so they fall back
+ * to the user's stored defaults (the same defaults the popup uses).
+ *
+ * Keyboard commands are a context-menu-free trigger: they work on hosts whose
+ * editors suppress the browser's native context menu (e.g. Outlook on the web,
+ * whose compose editor cancels the contextmenu event), where the extension's
+ * context-menu items can never appear.
+ */
+export function resolveCommandAction(
+  command: string,
+  settings: ExtensionSettings,
+): ResolvedMenuAction | null {
+  switch (command) {
+    case COMMAND_IDS.CORRECT_GRAMMAR:
+      return { action: 'correct' };
+    case COMMAND_IDS.TRANSLATE_DEFAULT:
+      return { action: 'translate', targetLanguage: settings.defaultTargetLanguage };
+    case COMMAND_IDS.REFORMULATE_DEFAULT:
+      return { action: 'reformulate', tone: settings.defaultReformulateTone };
     default:
       return null;
   }

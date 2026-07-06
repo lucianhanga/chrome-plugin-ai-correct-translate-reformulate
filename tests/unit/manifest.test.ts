@@ -10,8 +10,11 @@
 // tests/e2e/iframe-injection.test.ts).
 //
 // Compensating controls (also asserted here):
-//   - There are NO static `content_scripts` and NO `web_accessible_resources`;
-//     injection is always programmatic and user-initiated.
+//   - There is exactly ONE static content script -- the in-page selection
+//     toolbar -- scoped to a narrow allowlist of hosts (Outlook on the web)
+//     whose editor suppresses the native context menu. Everywhere else,
+//     injection is still programmatic and user-initiated. There are NO
+//     `web_accessible_resources`.
 //   - The `connect-src` CSP is the real egress lock: outbound requests can only
 //     reach the extension itself, the local Ollama endpoint, and the OpenAI API,
 //     regardless of the broad host permission.
@@ -34,8 +37,9 @@ const manifest = JSON.parse(
   permissions: string[];
   host_permissions: string[];
   content_security_policy?: { extension_pages?: string };
-  content_scripts?: unknown[];
+  content_scripts?: Array<{ matches?: string[]; js?: string[]; all_frames?: boolean; run_at?: string }>;
   web_accessible_resources?: unknown[];
+  commands?: Record<string, { suggested_key?: Record<string, string>; description?: string }>;
 };
 
 describe('manifest permission surface (security regression guard)', () => {
@@ -66,11 +70,54 @@ describe('manifest permission surface (security regression guard)', () => {
     expect(csp).not.toMatch(/connect-src[^;]*\bhttps:\s/);
   });
 
-  it('has no static content scripts (injection is always programmatic and user-initiated)', () => {
-    expect(manifest.content_scripts ?? []).toEqual([]);
+  it('restricts the one static content script to a narrow allowlist of menu-suppressing hosts', () => {
+    // The extension has exactly ONE static content script: the in-page selection
+    // toolbar. It exists only for hosts (Outlook on the web) whose editor cancels
+    // the native context menu, so the context-menu items can never appear there.
+    //
+    // This test pins its scope so it can never silently widen to the whole web.
+    // Everywhere else, injection remains programmatic and user-initiated (the
+    // result overlay is still injected on-demand via chrome.scripting).
+    const scripts = manifest.content_scripts ?? [];
+    expect(scripts.length).toBe(1);
+
+    const toolbar = scripts[0]!;
+    expect(toolbar.js).toEqual(['selection-toolbar.js']);
+    expect([...(toolbar.matches ?? [])].sort()).toEqual(
+      [
+        '*://outlook.office.com/*',
+        '*://outlook.office365.com/*',
+        '*://outlook.live.com/*',
+        '*://outlook.cloud.microsoft/*',
+      ].sort(),
+    );
+
+    // The static content script must NEVER be broadened to all sites. The broad
+    // <all_urls> host permission is deliberate for on-demand injection, but the
+    // *static* toolbar script stays scoped to the allowlist above.
+    for (const pattern of toolbar.matches ?? []) {
+      expect(pattern).not.toBe('<all_urls>');
+      expect(pattern).not.toMatch(/:\/\/\*\/\*/); // e.g. *://*/*
+    }
   });
 
   it('exposes no web-accessible resources', () => {
     expect(manifest.web_accessible_resources ?? []).toEqual([]);
+  });
+
+  it('declares keyboard commands as a context-menu-free trigger (needs no extra permission)', () => {
+    // Keyboard shortcuts let the extension run on hosts (e.g. Outlook on the
+    // web) whose editors suppress the native context menu. The `commands` key
+    // is a manifest-level key and grants no API permission, so the permission
+    // surface above is unchanged.
+    const commands = manifest.commands ?? {};
+    expect(Object.keys(commands).sort()).toEqual(
+      ['correct-grammar', 'reformulate-default', 'translate-default'].sort(),
+    );
+    // Chrome allows at most 4 commands to carry a suggested key.
+    const withKeys = Object.values(commands).filter((c) => c.suggested_key !== undefined);
+    expect(withKeys.length).toBeLessThanOrEqual(4);
+    // `commands` must NOT appear in the API permissions array.
+    expect(manifest.permissions).not.toContain('commands');
   });
 });

@@ -128,6 +128,14 @@ describe('getSettings: OpenAI provider field migration and coercion', () => {
     expect(settings.openaiConsentAcknowledged).toBe(false);
   });
 
+  it('defaults toolbarAllSites to false and coerces a non-boolean value', async () => {
+    const { getSettings } = await getStorageModule();
+    expect(DEFAULT_SETTINGS.toolbarAllSites).toBe(false);
+    await seedRawSettings({ ...DEFAULT_SETTINGS, toolbarAllSites: 'yes' });
+    const settings = await getSettings();
+    expect(settings.toolbarAllSites).toBe(false);
+  });
+
   it('preserves a valid non-default provider/model combination', async () => {
     const { getSettings } = await getStorageModule();
     await seedRawSettings({

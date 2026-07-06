@@ -628,6 +628,20 @@ function getOverlayCSS(): string {
  * The toast self-removes after the animation completes (~1.6s).
  */
 export function showCopiedToast(): void {
+  showToast('Copied!', '#22c55e', 1700);
+}
+
+/**
+ * Show a longer-lived hint used when in-place Replace could not be applied
+ * (e.g. a controlled editor like Teams reverts programmatic edits). The result
+ * is already on the clipboard and the original text is left selected, so a
+ * single paste replaces it.
+ */
+export function showReplaceHintToast(): void {
+  showToast('Copied — press Ctrl/Cmd+V to replace', '#eab308', 4200);
+}
+
+function showToast(message: string, color: string, durationMs: number): void {
   const toastHost = document.createElement('div');
   toastHost.setAttribute('data-ct-toast-host', '');
   toastHost.style.cssText =
@@ -636,20 +650,23 @@ export function showCopiedToast(): void {
 
   const shadow = toastHost.attachShadow({ mode: 'closed' });
 
+  // Fade out shortly before removal, regardless of the toast's total duration.
+  const fadeDelaySec = Math.max(0, (durationMs - 300) / 1000);
+
   const style = document.createElement('style');
   style.textContent = `
-    .ct-copied-toast {
+    .ct-toast {
       background: #313244;
-      color: #22c55e;
+      color: ${color};
       font-size: 13px;
       font-weight: 600;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       padding: 6px 16px;
       border-radius: 20px;
-      border: 1px solid #22c55e;
+      border: 1px solid ${color};
       box-shadow: 0 4px 16px rgba(0,0,0,0.4);
       white-space: nowrap;
-      animation: ct-toast-in 0.15s ease-out, ct-toast-out 0.2s ease-in 1.4s forwards;
+      animation: ct-toast-in 0.15s ease-out, ct-toast-out 0.2s ease-in ${fadeDelaySec}s forwards;
     }
     @keyframes ct-toast-in {
       from { opacity: 0; transform: translateY(8px); }
@@ -662,11 +679,11 @@ export function showCopiedToast(): void {
   shadow.appendChild(style);
 
   const toast = document.createElement('div');
-  toast.className = 'ct-copied-toast';
-  toast.textContent = 'Copied!';
+  toast.className = 'ct-toast';
+  toast.textContent = message;
   shadow.appendChild(toast);
 
   setTimeout(() => {
     toastHost.remove();
-  }, 1700);
+  }, durationMs);
 }

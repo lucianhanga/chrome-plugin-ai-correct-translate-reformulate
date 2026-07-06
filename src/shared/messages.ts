@@ -69,6 +69,23 @@ export interface SummarizeRequest {
   };
 }
 
+/**
+ * Sent by the in-page selection toolbar (a content script) to the service
+ * worker. Unlike the popup requests above, this carries a fully-specified
+ * action plus the selected text; the service worker runs it in the sender's
+ * tab/frame via the shared context-menu dispatch path.
+ */
+export interface RunSelectionActionRequest {
+  type: 'RUN_SELECTION_ACTION';
+  payload: {
+    action: ActionType;
+    text: string;
+    targetLanguage?: SupportedLanguage;
+    tone?: ReformulateTone;
+    length?: SummarizeLength;
+  };
+}
+
 export type PopupToServiceWorkerMessage =
   | CorrectGrammarRequest
   | TranslateRequest
@@ -237,6 +254,14 @@ const VALID_TYPES: ReadonlySet<string> = new Set([
   'START_REFORMULATE',
   'SUMMARIZE',
   'START_SUMMARIZE',
+  'RUN_SELECTION_ACTION',
+]);
+
+const ACTION_TYPES_SET: ReadonlySet<string> = new Set([
+  'correct',
+  'translate',
+  'reformulate',
+  'summarize',
 ]);
 
 const SUPPORTED_LANGUAGES_SET: ReadonlySet<string> = new Set([
@@ -350,6 +375,35 @@ export function isReformulateRequest(msg: unknown): msg is ReformulateRequest {
  */
 export function isSummarizeLength(v: unknown): v is SummarizeLength {
   return typeof v === 'string' && (SUMMARIZE_LENGTHS as readonly string[]).includes(v);
+}
+
+/**
+ * Type guard: validates a RUN_SELECTION_ACTION message from the in-page
+ * selection toolbar. Ensures the action is known and that any per-action
+ * parameter present is valid, so a malformed message can never drive a request.
+ */
+export function isRunSelectionActionRequest(msg: unknown): msg is RunSelectionActionRequest {
+  if (typeof msg !== 'object' || msg === null) return false;
+  const m = msg as Record<string, unknown>;
+  if (m['type'] !== 'RUN_SELECTION_ACTION') return false;
+  const payload = m['payload'] as Record<string, unknown> | undefined;
+  if (typeof payload !== 'object' || payload === null) return false;
+  if (typeof payload['text'] !== 'string') return false;
+  const action = payload['action'];
+  if (typeof action !== 'string' || !ACTION_TYPES_SET.has(action)) return false;
+
+  // Each action requires its own parameter to be valid when present.
+  if (action === 'translate') {
+    return isSupportedLanguage(payload['targetLanguage']);
+  }
+  if (action === 'reformulate') {
+    return isReformulateTone(payload['tone']);
+  }
+  if (action === 'summarize') {
+    return isSummarizeLength(payload['length']);
+  }
+  // 'correct' takes no parameter.
+  return true;
 }
 
 /**

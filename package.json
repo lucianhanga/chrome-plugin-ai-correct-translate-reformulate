@@ -1,10 +1,10 @@
 {
   "name": "correct-and-translate",
-  "version": "1.11.1",
+  "version": "1.13.0",
   "description": "Grammar correction and translation powered by local Ollama LLM.",
   "scripts": {
-    "build": "vite build && CONTENT_OUT_DIR=dist vite build --config vite.config.content.ts",
-    "build:test": "vite build --config vite.config.test.ts && CONTENT_OUT_DIR=dist-test vite build --config vite.config.content.ts",
+    "build": "vite build && CONTENT_OUT_DIR=dist vite build --config vite.config.content.ts && CONTENT_OUT_DIR=dist CONTENT_ENTRY=src/content/selection-toolbar.ts CONTENT_FILE=selection-toolbar.js CONTENT_NAME=__correctTranslateSelectionToolbar vite build --config vite.config.content.ts",
+    "build:test": "vite build --config vite.config.test.ts && CONTENT_OUT_DIR=dist-test vite build --config vite.config.content.ts && CONTENT_OUT_DIR=dist-test CONTENT_ENTRY=src/content/selection-toolbar.ts CONTENT_FILE=selection-toolbar.js CONTENT_NAME=__correctTranslateSelectionToolbar vite build --config vite.config.content.ts",
     "dev": "vite build --watch",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.e2e.json",
     "test": "vitest run",

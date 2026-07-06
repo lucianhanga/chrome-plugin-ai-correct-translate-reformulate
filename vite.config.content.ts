@@ -16,6 +16,14 @@ import { resolve } from 'path';
 //
 // CONTENT_OUT_DIR selects the target directory: 'dist' (production build) or
 // 'dist-test' (e2e test build). content.js is identical for both.
+//
+// IIFE format allows only ONE entry per build, so this config is parameterised
+// via env vars and invoked once per content script (content.ts and the static
+// selection-toolbar.ts). Defaults build the main content.js.
+const CONTENT_ENTRY = process.env.CONTENT_ENTRY ?? 'src/content/content.ts';
+const CONTENT_FILE = process.env.CONTENT_FILE ?? 'content.js';
+const CONTENT_NAME = process.env.CONTENT_NAME ?? '__correctTranslateContentScript';
+
 export default defineConfig({
   resolve: {
     alias: {
@@ -37,10 +45,10 @@ export default defineConfig({
     sourcemap: false,
     minify: true,
     lib: {
-      entry: resolve(__dirname, 'src/content/content.ts'),
+      entry: resolve(__dirname, CONTENT_ENTRY),
       formats: ['iife'],
-      name: '__correctTranslateContentScript',
-      fileName: () => 'content.js',
+      name: CONTENT_NAME,
+      fileName: () => CONTENT_FILE,
     },
   },
 });

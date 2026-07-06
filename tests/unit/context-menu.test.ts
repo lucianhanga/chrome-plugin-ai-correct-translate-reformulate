@@ -1,8 +1,9 @@
 // tests/unit/context-menu.test.ts
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 import { installChromeMock, resetChromeMock } from '../mocks/chrome.ts';
-import { resolveMenuAction, registerContextMenus } from '../../src/background/context-menu.ts';
-import { CONTEXT_MENU_IDS } from '../../src/shared/constants.ts';
+import { resolveMenuAction, resolveCommandAction, COMMAND_IDS, registerContextMenus } from '../../src/background/context-menu.ts';
+import { CONTEXT_MENU_IDS, DEFAULT_SETTINGS } from '../../src/shared/constants.ts';
+import type { ExtensionSettings } from '../../src/shared/types.ts';
 
 beforeAll(() => {
   installChromeMock();
@@ -113,6 +114,51 @@ describe('resolveMenuAction', () => {
   it('returns null for unknown menu item IDs', () => {
     expect(resolveMenuAction('unknown_id')).toBeNull();
     expect(resolveMenuAction('')).toBeNull();
+  });
+});
+
+// ============================================================
+// resolveCommandAction (keyboard shortcuts)
+// ============================================================
+
+describe('resolveCommandAction', () => {
+  const settings: ExtensionSettings = {
+    ...DEFAULT_SETTINGS,
+    defaultTargetLanguage: 'German',
+    defaultReformulateTone: 'professional',
+  };
+
+  it('resolves correct-grammar to the correct action', () => {
+    expect(resolveCommandAction(COMMAND_IDS.CORRECT_GRAMMAR, settings)).toEqual({
+      action: 'correct',
+    });
+  });
+
+  it('resolves translate-default to translate using the stored default language', () => {
+    expect(resolveCommandAction(COMMAND_IDS.TRANSLATE_DEFAULT, settings)).toEqual({
+      action: 'translate',
+      targetLanguage: 'German',
+    });
+  });
+
+  it('resolves reformulate-default to reformulate using the stored default tone', () => {
+    expect(resolveCommandAction(COMMAND_IDS.REFORMULATE_DEFAULT, settings)).toEqual({
+      action: 'reformulate',
+      tone: 'professional',
+    });
+  });
+
+  it('tracks a change in the default language', () => {
+    const it = resolveCommandAction(COMMAND_IDS.TRANSLATE_DEFAULT, {
+      ...settings,
+      defaultTargetLanguage: 'Italian',
+    });
+    expect(it).toEqual({ action: 'translate', targetLanguage: 'Italian' });
+  });
+
+  it('returns null for an unknown command', () => {
+    expect(resolveCommandAction('not-a-command', settings)).toBeNull();
+    expect(resolveCommandAction('', settings)).toBeNull();
   });
 });
 

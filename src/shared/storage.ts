@@ -50,6 +50,10 @@ export async function getSettings(): Promise<ExtensionSettings> {
   if (!SUMMARIZE_LENGTHS.includes(merged.defaultSummarizeLength)) {
     merged.defaultSummarizeLength = 'standard';
   }
+  // Defense-in-depth: coerce the all-sites toolbar flag to a boolean.
+  if (typeof merged.toolbarAllSites !== 'boolean') {
+    merged.toolbarAllSites = false;
+  }
   // Defense-in-depth: coerce the target language to a supported value (covers
   // both Romanian variants and guards against corrupted/hand-edited storage).
   if (!SUPPORTED_LANGUAGES.includes(merged.defaultTargetLanguage)) {

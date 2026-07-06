@@ -613,6 +613,7 @@ describe('SettingsSection', () => {
     keepTerminology: true,
     defaultReformulateTone: 'keep' as const,
     defaultSummarizeLength: 'standard' as const,
+    toolbarAllSites: false,
   };
 
   it('renders the Ollama and OpenAI provider toggle buttons', async () => {

@@ -49,6 +49,9 @@ export function SettingsSection({ settings, onSaved }: SettingsSectionProps): Re
     settings.defaultTargetLanguage,
   );
 
+  // In-page selection toolbar: show on all sites (opt-in).
+  const [toolbarAllSites, setToolbarAllSites] = useState<boolean>(settings.toolbarAllSites);
+
   // Consent dialog state
   const [showConsentDialog, setShowConsentDialog] = useState(false);
   const [pendingProvider, setPendingProvider] = useState<LLMProvider | null>(null);
@@ -132,6 +135,7 @@ export function SettingsSection({ settings, onSaved }: SettingsSectionProps): Re
         defaultTargetLanguage,
         provider,
         openaiModel,
+        toolbarAllSites,
         // Only save the key if the user has typed a new one.
         // Sending the sentinel means "do not overwrite" (handled in message-handler).
         openaiApiKey: apiKeyDirty && apiKeyInput.trim() ? apiKeyInput.trim() : KEY_SET_SENTINEL,
@@ -395,6 +399,26 @@ export function SettingsSection({ settings, onSaved }: SettingsSectionProps): Re
         }}
         includeAutoDetect={false}
       />
+
+      {/* Selection toolbar on all sites (opt-in) */}
+      <div className="flex flex-col gap-1">
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            data-testid="toolbar-all-sites"
+            checked={toolbarAllSites}
+            onChange={(e) => setToolbarAllSites(e.target.checked)}
+            className="h-3.5 w-3.5 accent-[#22c55e] cursor-pointer"
+          />
+          <span className="text-xs font-semibold text-[#a6adc8]">
+            Selection toolbar on all sites
+          </span>
+        </label>
+        <p className="text-[11px] text-[#585b70]">
+          Off by default (only Outlook on the web). When on, a floating toolbar
+          appears on any site when you select text. Reload open tabs to apply.
+        </p>
+      </div>
 
       {/* Save button + feedback */}
       <div className="flex flex-col gap-1">

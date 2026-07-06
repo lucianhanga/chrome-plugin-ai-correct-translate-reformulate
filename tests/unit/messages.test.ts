@@ -13,6 +13,7 @@ import {
   isGetSettingsRequest,
   isSaveSettingsRequest,
   isValidateOpenAIKeyRequest,
+  isRunSelectionActionRequest,
 } from '../../src/shared/messages.ts';
 
 describe('isValidMessageType', () => {
@@ -385,5 +386,85 @@ describe('isSummarizeRequest', () => {
   it('rejects wrong type and null', () => {
     expect(isSummarizeRequest({ type: 'REFORMULATE', payload: { text: 'x', length: 'brief' } })).toBe(false);
     expect(isSummarizeRequest(null)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// isRunSelectionActionRequest (in-page selection toolbar)
+// ---------------------------------------------------------------------------
+
+describe('isRunSelectionActionRequest', () => {
+  it('accepts a correct action with no parameter', () => {
+    expect(
+      isRunSelectionActionRequest({ type: 'RUN_SELECTION_ACTION', payload: { action: 'correct', text: 'hi' } }),
+    ).toBe(true);
+  });
+
+  it('accepts translate with a supported language', () => {
+    expect(
+      isRunSelectionActionRequest({
+        type: 'RUN_SELECTION_ACTION',
+        payload: { action: 'translate', text: 'hi', targetLanguage: 'German' },
+      }),
+    ).toBe(true);
+  });
+
+  it('accepts reformulate with a valid tone and summarize with a valid length', () => {
+    expect(
+      isRunSelectionActionRequest({
+        type: 'RUN_SELECTION_ACTION',
+        payload: { action: 'reformulate', text: 'hi', tone: 'professional' },
+      }),
+    ).toBe(true);
+    expect(
+      isRunSelectionActionRequest({
+        type: 'RUN_SELECTION_ACTION',
+        payload: { action: 'summarize', text: 'hi', length: 'brief' },
+      }),
+    ).toBe(true);
+  });
+
+  it('rejects translate without a valid language', () => {
+    expect(
+      isRunSelectionActionRequest({
+        type: 'RUN_SELECTION_ACTION',
+        payload: { action: 'translate', text: 'hi', targetLanguage: 'Klingon' },
+      }),
+    ).toBe(false);
+    expect(
+      isRunSelectionActionRequest({ type: 'RUN_SELECTION_ACTION', payload: { action: 'translate', text: 'hi' } }),
+    ).toBe(false);
+  });
+
+  it('rejects reformulate/summarize with an invalid parameter', () => {
+    expect(
+      isRunSelectionActionRequest({
+        type: 'RUN_SELECTION_ACTION',
+        payload: { action: 'reformulate', text: 'hi', tone: 'sarcastic' },
+      }),
+    ).toBe(false);
+    expect(
+      isRunSelectionActionRequest({
+        type: 'RUN_SELECTION_ACTION',
+        payload: { action: 'summarize', text: 'hi', length: 'epic' },
+      }),
+    ).toBe(false);
+  });
+
+  it('rejects an unknown action, non-string text, wrong type, and null', () => {
+    expect(
+      isRunSelectionActionRequest({ type: 'RUN_SELECTION_ACTION', payload: { action: 'explode', text: 'hi' } }),
+    ).toBe(false);
+    expect(
+      isRunSelectionActionRequest({ type: 'RUN_SELECTION_ACTION', payload: { action: 'correct', text: 123 } }),
+    ).toBe(false);
+    expect(
+      isRunSelectionActionRequest({ type: 'CORRECT_GRAMMAR', payload: { action: 'correct', text: 'hi' } }),
+    ).toBe(false);
+    expect(isRunSelectionActionRequest(null)).toBe(false);
+  });
+
+  it('recognises RUN_SELECTION_ACTION as a valid message type', () => {
+    expect(isValidMessageType('RUN_SELECTION_ACTION')).toBe(true);
   });
 });

@@ -61,6 +61,14 @@ const chromeMock = {
   },
   scripting: {
     executeScript: vi.fn(),
+    getRegisteredContentScripts: vi.fn().mockResolvedValue([]),
+    registerContentScripts: vi.fn().mockResolvedValue(undefined),
+    unregisterContentScripts: vi.fn().mockResolvedValue(undefined),
+  },
+  commands: {
+    onCommand: {
+      addListener: vi.fn(),
+    },
   },
   tabs: {
     sendMessage: vi.fn(),

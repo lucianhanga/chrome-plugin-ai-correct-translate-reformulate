@@ -6,7 +6,7 @@ LLM by default** (fully private, nothing leaves your machine) or, opt-in,
 against **OpenAI**.
 
 [![CI](https://github.com/lucianhanga/chrome.extension.ai.correct.translate.reformulate/actions/workflows/ci.yml/badge.svg)](https://github.com/lucianhanga/chrome.extension.ai.correct.translate.reformulate/actions/workflows/ci.yml)
-![tests](https://img.shields.io/badge/tests-346%20unit%20%7C%20129%20e2e-22c55e)
+![tests](https://img.shields.io/badge/tests-360%20unit%20%7C%20129%20e2e-22c55e)
 ![manifest](https://img.shields.io/badge/Manifest-V3-1e3a5f)
 ![version](https://img.shields.io/badge/version-1.11.1-1e3a5f)
 ![license](https://img.shields.io/badge/license-MIT-22c55e)
@@ -43,7 +43,9 @@ and **Append**.
   language (text is never silently translated). Translate offers two Romanian
   targets: with diacritics, and a plain-ASCII "no diacritics" variant.
 - Dual provider: local **Ollama** (default, private) or **OpenAI** (opt-in).
-- Two entry points: the right-click **context menu** and the toolbar **popup**.
+- Four entry points: the right-click **context menu**, the toolbar **popup**,
+  **keyboard shortcuts**, and an in-page **selection toolbar** on sites (like
+  Outlook on the web) whose editor suppresses the native right-click menu.
 - In-place **Replace** / **Append** for editable selections; clipboard copy for
   non-editable ones.
 - **Auto-copy** of every result to the clipboard.
@@ -149,6 +151,30 @@ result is copied to the clipboard.
 action area, pick an action, and the result is shown inline and copied to the
 clipboard.
 
+**From the keyboard:** select text and press a shortcut. Some sites (notably
+**Outlook on the web**) use an editor that suppresses the browser's native
+right-click menu, so the context-menu items never appear there; keyboard
+shortcuts are the way to reach the extension on those pages. Defaults:
+
+| Action | Windows / Linux | macOS |
+| --- | --- | --- |
+| Correct grammar | `Ctrl+Shift+Y` | `Cmd+Shift+Y` |
+| Translate to default language | `Ctrl+Shift+L` | `Cmd+Shift+L` |
+| Reformulate (default tone) | unassigned | unassigned |
+
+Translate and Reformulate use the default language / tone set in the popup.
+Review or change any shortcut (including assigning one to Reformulate) at
+`chrome://extensions/shortcuts`.
+
+**From the selection toolbar (Outlook on the web):** on hosts whose editor
+suppresses the native right-click menu, selecting text shows a small floating
+toolbar next to the selection. Pick Correct, or open Translate / Reformulate /
+Summarize to choose a language / tone / length. By default this is scoped to a
+narrow allowlist of Outlook web hosts and does not appear on other sites (use
+the context menu or keyboard shortcuts there). To show it **everywhere**, enable
+**"Selection toolbar on all sites"** in the popup settings (off by default);
+reload open tabs to apply.
+
 For an illustrated walkthrough (with screenshots of the context menu, result
 panel, and both provider settings), see the
 [User Guide](docs/user-guide.md).
@@ -187,18 +213,19 @@ pick up changes.
 
 ### Latest test run
 
-Run on 2026-06-18 (release 1.11.1), against a real local Ollama
-(model `qwen3.6:35b-a3b`):
+Run on 2026-07-06 (release 1.13.0):
 
 | Check | Result |
 |-------|--------|
 | `pnpm typecheck` (tsc, src + e2e) | pass |
 | `pnpm lint` (eslint) | pass |
-| `pnpm test` -- unit (Vitest) | 346 / 346 passed (20 files) |
-| `pnpm test:e2e` -- end-to-end (Playwright) | 129 / 129 passed |
+| `pnpm test` -- unit (Vitest) | 360 / 360 passed (20 files) |
+| `pnpm test:e2e` -- end-to-end (Playwright) | not re-run this release (unchanged suite; last: 129 / 129) |
 
 These figures are from a local run. The end-to-end suite is not part of CI
-(see below), so re-run it locally before a release.
+(see below) and requires a real local Ollama; re-run it locally before a
+release. The 1.13.0 changes (keyboard shortcuts, selection toolbar) are not yet
+covered by e2e and were verified manually.
 
 > **Note on e2e parallelism:** the real-Ollama tests (`reformulate`, `summarize`)
 > issue live inference calls. The default 5-way worker parallelism starves a
@@ -244,6 +271,16 @@ content script can be injected into **cross-origin iframes** -- webmail compose
 editors (for example GMX) host their editable area in such a frame, which the
 `activeTab` permission alone cannot reach.
 
+The overlay content script is injected **on demand** (only when you trigger an
+action). The one exception is the in-page **selection toolbar**, a static
+content script scoped to a narrow allowlist of Outlook web hosts
+(`outlook.office.com`, `outlook.office365.com`, `outlook.live.com`,
+`outlook.cloud.microsoft`). The optional "Selection toolbar on all sites"
+setting registers the same toolbar for all sites at runtime (off by default);
+it adds no new permission -- it rides on the `<all_urls>` host permission and
+`scripting` that are already granted. Keyboard shortcuts use the `commands`
+manifest key, which also grants no new permission.
+
 Broad host access does **not** mean broad network access. Network egress is
 restricted by the `connect-src` Content Security Policy, which permits requests
 only to local Ollama (`http://localhost:11434`) and OpenAI
@@ -269,11 +306,13 @@ src/
     ollama-client.ts     Ollama provider client
     openai-client.ts     OpenAI provider client
     tasks.ts             Correct / translate / reformulate helpers
-    context-menu.ts      Context menu registration and mapping
-  content/         On-demand content script and overlay
-    content.ts           Content script entry point
+    context-menu.ts      Context menu + keyboard command mapping
+  content/         Content scripts and overlay
+    content.ts           On-demand overlay content script (injected per action)
     overlay.ts           Shadow DOM result overlay
     overlay.css          Overlay styles
+    selection-toolbar.ts Static toolbar for Outlook web (menu-suppressing hosts)
+    selection-toolbar.css Toolbar styles
     text-replacement.ts  Replace / Append into editable fields
   popup/           React popup UI (settings + quick actions)
   shared/          Types, messages, prompts, storage, validators, constants

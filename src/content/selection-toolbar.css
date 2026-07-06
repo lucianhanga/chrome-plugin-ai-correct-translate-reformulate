@@ -1,0 +1,70 @@
+/* src/content/selection-toolbar.css
+   Styles for the in-page selection toolbar. Injected into a closed Shadow DOM
+   so the host page's CSS (e.g. Outlook) cannot affect it and vice versa. */
+
+.ct-toolbar {
+  position: fixed;
+  z-index: 2147483646; /* one below the result overlay */
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  max-width: 320px;
+  padding: 4px;
+  background: #313244;
+  border: 1px solid #45475a;
+  border-radius: 10px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  pointer-events: auto;
+  animation: ct-toolbar-in 0.12s ease-out;
+}
+
+@keyframes ct-toolbar-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.ct-tb-btn {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: #cdd6f4;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 7px 10px;
+  border-radius: 7px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.1s ease, color 0.1s ease;
+}
+
+.ct-tb-btn:hover {
+  background: #45475a;
+  color: #ffffff;
+}
+
+.ct-tb-btn:focus-visible {
+  outline: 2px solid #89b4fa;
+  outline-offset: 1px;
+}
+
+.ct-tb-btn--primary:hover {
+  background: #89b4fa;
+  color: #1e1e2e;
+}
+
+/* Back chevron that returns from a sub-menu to the top-level actions. */
+.ct-tb-back {
+  color: #89b4fa;
+  font-weight: 700;
+  padding-left: 8px;
+  padding-right: 8px;
+}
+
+.ct-tb-sep {
+  width: 1px;
+  align-self: stretch;
+  margin: 3px 2px;
+  background: #45475a;
+}

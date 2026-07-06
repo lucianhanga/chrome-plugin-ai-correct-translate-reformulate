@@ -2,7 +2,7 @@
 // Applies result text to the page: replaces or appends in editable fields,
 // or copies to the clipboard when the selection is not editable.
 
-import { showCopiedToast } from './overlay.ts';
+import { showCopiedToast, showReplaceHintToast } from './overlay.ts';
 
 // Appended after replaced or inserted result text, so a new line follows it.
 const RESULT_SUFFIX = '\n';
@@ -170,35 +170,79 @@ function insertIntoCapturedRange(
   text: string,
   mode: 'replace' | 'append',
 ): void {
-  host.focus({ preventScroll: true });
-
-  const selection = window.getSelection();
-  if (!selection) return;
+  // `host` is the nearest editable ancestor of the selection, which in managed
+  // editors (Teams, etc.) is often an inner <p> that only *inherits*
+  // contenteditable. Focusing that node does not put focus in the editor. Walk
+  // up to the element that actually owns the contenteditable attribute -- the
+  // editor root -- and drive focus/selection/insertion through it.
+  const root = editableRootOf(host);
 
   const targetRange = range.cloneRange();
   if (mode === 'append') {
     targetRange.collapse(false); // collapse to the end of the original selection
   }
 
-  selection.removeAllRanges();
-  selection.addRange(targetRange);
+  // Re-focus the editor root and re-apply the captured selection. Returns the
+  // live selection, or null if unavailable.
+  const reselect = (): Selection | null => {
+    root.focus({ preventScroll: true });
+    const sel = window.getSelection();
+    if (!sel) return null;
+    sel.removeAllRanges();
+    sel.addRange(targetRange.cloneRange());
+    return sel;
+  };
 
-  // execCommand('insertText') inserts plain text only (never HTML) -- safe
-  // against XSS -- and is delivered as an input event that managed editors
-  // apply through their own document model.
-  const ok = document.execCommand('insertText', false, text);
-  if (ok) return;
+  const before = root.textContent ?? '';
 
-  // Last-resort fallback for editors that reject execCommand. Direct DOM
-  // mutation works for plain inputs and simple contenteditables but is not
-  // guaranteed to survive a managed editor's re-render.
-  targetRange.deleteContents();
+  // Apply the selection now, then defer the actual insertion by a task. Managed
+  // editors (Teams) derive their internal model selection from the DOM selection
+  // via the async `selectionchange` event; inserting in the same tick would run
+  // against a stale model selection and the editor would revert the change.
+  // The overlay's own cleanup() re-focuses the page after this returns, so the
+  // deferred callback re-asserts focus and selection before inserting.
+  reselect();
+
+  setTimeout(() => {
+    const sel = reselect();
+    if (!sel) return;
+
+    const ok = document.execCommand('insertText', false, text);
+    if (!ok || (root.textContent ?? '') === before) {
+      // execCommand did not apply (or changed nothing): raw-DOM fallback for
+      // simple contenteditables that reject execCommand.
+      rawInsertIntoRange(targetRange, text);
+    }
+
+    // Verify the change survives the editor's reconciliation. A controlled
+    // editor (Teams) can revert a programmatic edit a moment later. If the text
+    // snaps back, leave the original selected and prompt the user to paste --
+    // the result is already on the clipboard, and a trusted paste always works.
+    setTimeout(() => {
+      if ((root.textContent ?? '') === before) {
+        reselect();
+        showReplaceHintToast();
+      }
+    }, 250);
+  }, 0);
+}
+
+/**
+ * Raw DOM insertion into a range. Works for plain inputs and simple
+ * contenteditables; not guaranteed to survive a managed editor's re-render.
+ */
+function rawInsertIntoRange(range: Range, text: string): void {
+  const r = range.cloneRange();
+  r.deleteContents();
   const node = document.createTextNode(text);
-  targetRange.insertNode(node);
-  targetRange.setStartAfter(node);
-  targetRange.setEndAfter(node);
-  selection.removeAllRanges();
-  selection.addRange(targetRange);
+  r.insertNode(node);
+  r.setStartAfter(node);
+  r.setEndAfter(node);
+  const sel = window.getSelection();
+  if (sel) {
+    sel.removeAllRanges();
+    sel.addRange(r);
+  }
 }
 
 // ============================================================
@@ -238,6 +282,25 @@ function findEditableAncestor(node: Node): Element | null {
 
 function isContentEditable(element: HTMLElement): boolean {
   return element.isContentEditable === true || element.getAttribute('contenteditable') === 'true';
+}
+
+/**
+ * Walk up from an editable node to the element that actually declares the
+ * contenteditable attribute (the editor root). Inner nodes like <p> inherit
+ * `isContentEditable` but are not focusable editors; the root is. Falls back to
+ * the given node if no explicit contenteditable ancestor is found.
+ */
+function editableRootOf(node: HTMLElement): HTMLElement {
+  let root = node;
+  let current: HTMLElement | null = node;
+  while (current && current.isContentEditable) {
+    const attr = current.getAttribute('contenteditable');
+    if (attr === 'true' || attr === '' || attr === 'plaintext-only') {
+      root = current;
+    }
+    current = current.parentElement;
+  }
+  return root;
 }
 
 function isTextInput(input: HTMLInputElement): boolean {

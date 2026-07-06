@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Correct & Translate",
-  "version": "1.11.1",
+  "version": "1.13.0",
   "description": "Grammar correction and translation powered by local Ollama LLM.",
 
   "permissions": [
@@ -21,6 +21,21 @@
     "type": "module"
   },
 
+  "content_scripts": [
+    {
+      "matches": [
+        "*://outlook.office.com/*",
+        "*://outlook.office365.com/*",
+        "*://outlook.live.com/*",
+        "*://outlook.cloud.microsoft/*"
+      ],
+      "js": ["selection-toolbar.js"],
+      "all_frames": true,
+      "match_about_blank": true,
+      "run_at": "document_idle"
+    }
+  ],
+
   "action": {
     "default_popup": "popup.html",
     "default_icon": {
@@ -28,6 +43,26 @@
       "32": "icons/icon-32.png",
       "48": "icons/icon-48.png",
       "128": "icons/icon-128.png"
+    }
+  },
+
+  "commands": {
+    "correct-grammar": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+Y",
+        "mac": "Command+Shift+Y"
+      },
+      "description": "Correct grammar of the selected text"
+    },
+    "translate-default": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+L",
+        "mac": "Command+Shift+L"
+      },
+      "description": "Translate the selected text to your default language"
+    },
+    "reformulate-default": {
+      "description": "Reformulate the selected text with your default tone"
     }
   },
 

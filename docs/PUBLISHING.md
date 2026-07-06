@@ -61,6 +61,8 @@ Chrome asks you to justify each permission. Use these:
 | `activeTab` | Reads the user's current selection and acts on the tab the user is actively using when they trigger an action. |
 | `scripting` | Injects the content script / result overlay on demand into the active tab to show results and offer in-place Replace/Append. |
 | `clipboardWrite` | Automatically copies each result to the clipboard. |
+| `commands` (keyboard shortcuts) | Optional, remappable keyboard shortcuts to run Correct / Translate / Reformulate on the current selection. Needed for sites (e.g. Outlook on the web) whose editor suppresses the native right-click menu. Grants no data access. |
+| Static content script (selection toolbar) | A small in-page toolbar shown near a text selection, scoped by default to a narrow allowlist of Outlook web hosts (`outlook.office.com`, `outlook.office365.com`, `outlook.live.com`, `outlook.cloud.microsoft`) whose editor suppresses the right-click menu. An optional, off-by-default "all sites" setting extends it at runtime via the already-granted `scripting` + `<all_urls>`. |
 | Host permission `<all_urls>` | The content script must reach the editable area on any page, including cross-origin iframes (e.g. webmail compose editors such as GMX) that `activeTab` alone cannot reach. Network egress is still restricted by CSP to local Ollama and OpenAI only. |
 | Remote code | **Not used.** All code is bundled in the package; the extension loads no remote scripts. |
 

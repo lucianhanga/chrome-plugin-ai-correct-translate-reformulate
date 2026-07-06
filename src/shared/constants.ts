@@ -96,6 +96,7 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   keepTerminology: true,
   defaultReformulateTone: 'keep',
   defaultSummarizeLength: 'standard',
+  toolbarAllSites: false,
 };
 
 // ============================================================
