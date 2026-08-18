@@ -7,6 +7,37 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Each tagged release also publishes a packaged `correct-and-translate-<version>.zip`
 to [GitHub Releases](https://github.com/lucianhanga/chrome.extension.ai.correct.translate.reformulate/releases).
 
+## [1.14.0] - 2026-08-18
+
+### Added
+
+- **German form-of-address mirroring.** Reformulate (every tone, including
+  professional) and translations into German now mirror the input's T-V
+  register: text that addresses the reader with the informal "du" comes back
+  with "du"; the formal "Sie" is used only when the input itself uses "Sie"
+  (or, for translations from languages without the distinction, when the
+  source is clearly formal). Previously the professional tone and translation
+  into German tended to force "Sie" even for informal messages.
+
+### Fixed
+
+- **Mixed-language messages no longer get translated by Correct / Reformulate.**
+  The prompts now define the output language as the *dominant* language of the
+  input ("the language most of the text is written in") instead of a single
+  detected language, so a message written mostly in one language with a
+  minority second language is corrected/reformulated in the dominant language —
+  adjusting the tone no longer translates the message, and the minority
+  language no longer takes over the output.
+- **"Keep terminology" now actually keeps technical terms.** The reformulate
+  language lock previously demanded output "in that exact same language and in
+  no other language", which silently overrode the keep-terminology rule and
+  made the model translate English computer-science vocabulary ("best
+  practices", "code review", "pull request", "error handling", ...) into the
+  dominant language. The lock no longer contradicts the terminology rule, an
+  explicit exception is appended after it when keep-terminology is on, and the
+  rule names concrete CS vocabulary as keep-as-is examples. Grammar correction
+  received the same keep-terms instruction.
+
 ## [1.13.0] - 2026-07-06
 
 ### Added
@@ -93,6 +124,7 @@ to [GitHub Releases](https://github.com/lucianhanga/chrome.extension.ai.correct.
 - Prepared the repository for Chrome Web Store publishing (README, privacy
   policy, store-listing assets, 24-bit screenshots).
 
+[1.14.0]: https://github.com/lucianhanga/chrome.extension.ai.correct.translate.reformulate/releases/tag/v1.14.0
 [1.13.0]: https://github.com/lucianhanga/chrome.extension.ai.correct.translate.reformulate/releases/tag/v1.13.0
 [1.11.1]: https://github.com/lucianhanga/chrome.extension.ai.correct.translate.reformulate/releases/tag/v1.11.1
 [1.11.0]: https://github.com/lucianhanga/chrome.extension.ai.correct.translate.reformulate/releases/tag/v1.11.0

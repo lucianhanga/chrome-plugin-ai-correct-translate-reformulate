@@ -6,9 +6,9 @@ LLM by default** (fully private, nothing leaves your machine) or, opt-in,
 against **OpenAI**.
 
 [![CI](https://github.com/lucianhanga/chrome.extension.ai.correct.translate.reformulate/actions/workflows/ci.yml/badge.svg)](https://github.com/lucianhanga/chrome.extension.ai.correct.translate.reformulate/actions/workflows/ci.yml)
-![tests](https://img.shields.io/badge/tests-360%20unit%20%7C%20129%20e2e-22c55e)
+![tests](https://img.shields.io/badge/tests-369%20unit%20%7C%20134%20e2e-22c55e)
 ![manifest](https://img.shields.io/badge/Manifest-V3-1e3a5f)
-![version](https://img.shields.io/badge/version-1.11.1-1e3a5f)
+![version](https://img.shields.io/badge/version-1.14.0-1e3a5f)
 ![license](https://img.shields.io/badge/license-MIT-22c55e)
 [![release](https://img.shields.io/github/v/release/lucianhanga/chrome.extension.ai.correct.translate.reformulate)](https://github.com/lucianhanga/chrome.extension.ai.correct.translate.reformulate/releases/latest)
 
@@ -40,7 +40,12 @@ and **Append**.
 - Four text actions: Correct, Translate (EN / DE / RO / ES / IT), Reformulate (4 tones),
   Summarize (3 lengths). The context-menu Translate items show country flags.
 - Language-aware: Correct, Reformulate, and Summarize keep the input/detected
-  language (text is never silently translated). Translate offers two Romanian
+  language (text is never silently translated). For **mixed-language**
+  messages the output stays in the dominant language, and with **Keep
+  terminology** on, English technical terms (e.g. "best practices", "code
+  review") stay in English. For **German**, the form of address is mirrored:
+  "du" stays "du" for every tone (including professional) and "Sie" is used
+  only when the input uses "Sie". Translate offers two Romanian
   targets: with diacritics, and a plain-ASCII "no diacritics" variant.
 - Dual provider: local **Ollama** (default, private) or **OpenAI** (opt-in).
 - Four entry points: the right-click **context menu**, the toolbar **popup**,
@@ -213,19 +218,21 @@ pick up changes.
 
 ### Latest test run
 
-Run on 2026-07-06 (release 1.13.0):
+Run on 2026-08-18 (release 1.14.0):
 
 | Check | Result |
 |-------|--------|
 | `pnpm typecheck` (tsc, src + e2e) | pass |
 | `pnpm lint` (eslint) | pass |
-| `pnpm test` -- unit (Vitest) | 360 / 360 passed (20 files) |
-| `pnpm test:e2e` -- end-to-end (Playwright) | not re-run this release (unchanged suite; last: 129 / 129) |
+| `pnpm test` -- unit (Vitest) | 369 / 369 passed (20 files) |
+| `pnpm test:e2e` -- end-to-end (Playwright) | not re-run this release (requires `qwen3.6:35b-a3b` locally; last: 129 / 129) |
 
 These figures are from a local run. The end-to-end suite is not part of CI
 (see below) and requires a real local Ollama; re-run it locally before a
-release. The 1.13.0 changes (keyboard shortcuts, selection toolbar) are not yet
-covered by e2e and were verified manually.
+release. The 1.14.0 prompt changes (mixed-language dominant-language locking,
+terminology keeping, German du/Sie mirroring) were verified against a real
+local model (`qwen3.6:27b`) with repeated reformulate/translate runs, and new
+e2e regression tests were added for them.
 
 > **Note on e2e parallelism:** the real-Ollama tests (`reformulate`, `summarize`)
 > issue live inference calls. The default 5-way worker parallelism starves a

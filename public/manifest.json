@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Correct & Translate",
-  "version": "1.13.0",
+  "version": "1.14.0",
   "description": "Grammar correction and translation powered by local Ollama LLM.",
 
   "permissions": [
