@@ -38,6 +38,10 @@ const ROMANIAN_DIACRITICS = /[ăâîșțĂÂÎȘȚ]/;
 const ROMANIAN_WORDS =
   /\b(și|să|este|sunt|pentru|aș|tău|mâine|nevoie|despre|vreau|discutăm|fiecare|interesante)\b/i;
 const ENGLISH_WORDS = /\b(the|and|with|your|would|please|hello|need|every|new)\b/i;
+// English computer-science terms that must survive reformulation unchanged
+// when "Keep terminology" is on (the default).
+const ENGLISH_CS_TERMS =
+  /\b(code review|pull request|best practices|unit tests|merge|deadline|deployment|feature branch)\b/i;
 
 function looksRomanian(text: string): boolean {
   return ROMANIAN_DIACRITICS.test(text) || ROMANIAN_WORDS.test(text);
@@ -129,6 +133,74 @@ test.describe('Language preservation: Reformulate keeps English', () => {
       looksRomanian(result),
       `Reformulation drifted to Romanian: ${result}`,
     ).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Mixed-language input -- dominant language wins, terminology stays English
+//
+// Reported follow-up bugs (v1.13.x):
+//   1. Adjusting the tone of a mixed-language message sometimes translated the
+//      whole message -- the output must stay in the DOMINANT language.
+//   2. English computer-science terminology ("best practices", "code review",
+//      "pull request", ...) inside a non-English message must stay in English;
+//      only the surrounding prose is reformulated in the dominant language.
+// Root cause: the reformulate language lock demanded output "in that exact
+// same language and in no other language", which overrode the keep-terminology
+// rule; and "the language of the input" was undefined for mixed-language text.
+// ---------------------------------------------------------------------------
+
+test.describe('Language preservation: mixed-language reformulate keeps dominant language and English terms', () => {
+  test('reformulate (keep tone) of Romanian text with English CS terms returns Romanian with terms intact', async ({
+    openPopup,
+  }) => {
+    const popup = await openPopup();
+
+    // Romanian-dominant message full of English CS vocabulary.
+    const input =
+      'Salut, am lucrat azi la pull request-ul pentru feature-ul de caching. Best practices spun sa adaugam unit tests inainte de merge, dar deadline-ul e strans. Poti sa faci un code review maine dimineata?';
+    await popup.locator('textarea').fill(input);
+
+    await popup.getByRole('button', { name: /^Reformulate$/i }).click();
+
+    const result = await readResult(popup);
+
+    // The reformulation must stay Romanian...
+    expect(
+      looksRomanian(result),
+      `Expected a Romanian reformulation but got: ${result}`,
+    ).toBe(true);
+    // ...and at least one English CS term must survive untranslated.
+    expect(
+      ENGLISH_CS_TERMS.test(result),
+      `Expected English CS terminology to be kept, but it was folded away: ${result}`,
+    ).toBe(true);
+  });
+
+  test('reformulate (professional tone) of Romanian text with an English sentence stays Romanian', async ({
+    openPopup,
+  }) => {
+    const popup = await openPopup();
+
+    // Romanian-dominant with a full English sentence in the middle: the
+    // minority ("second") language must NOT become the output language.
+    const input =
+      'Salut, maine avem deadline pentru sprint si mai trebuie sa inchidem ticketele. The feature branch needs a rebase and a careful code review before we can merge the pull request into main. Te rog sa te uiti si pe unit tests cand ai timp.';
+    await popup.locator('textarea').fill(input);
+
+    const toneSelect = popup
+      .locator('select')
+      .filter({ has: popup.locator('option[value="professional"]') });
+    await toneSelect.selectOption('professional');
+
+    await popup.getByRole('button', { name: /^Reformulate$/i }).click();
+
+    const result = await readResult(popup);
+
+    expect(
+      looksRomanian(result),
+      `Expected the dominant language (Romanian) but got: ${result}`,
+    ).toBe(true);
   });
 });
 

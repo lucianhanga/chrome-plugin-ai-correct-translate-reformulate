@@ -155,14 +155,24 @@ editors live in cross-origin iframes — this is also why the manifest needs
 ### Prompts (src/shared/prompts.ts)
 
 Language-lock is the central design constraint: Correct / Reformulate /
-Summarize must keep the input language (never silently translate). The
-`LANGUAGE_LOCK` block is appended **last** to reformulate prompts ("FINAL AND
-MOST IMPORTANT RULE") because tone instructions bias models toward English —
-this fixed a real English→Romanian regression. Translate to Romanian comes in
-two variants: proper diacritics (prompt rule) and a plain-ASCII variant
-(prompt rule + deterministic `stripRomanianDiacritics` post-processing).
-Temperatures: correct/translate 0.2, reformulate 0.3 (keep) / 0.4, summarize
-0.3.
+Summarize must keep the input language (never silently translate). The rule is
+phrased around the **dominant** language ("the language most of the text is
+written in") so mixed-language messages can't drift into the minority ("second")
+language. The `LANGUAGE_LOCK` block is appended **last** to reformulate prompts
+("FINAL AND MOST IMPORTANT RULE") because tone instructions bias models toward
+English — this fixed a real English→Romanian regression. When "Keep
+terminology" is on, an explicit exception follows the lock so domain/technical
+terms (e.g. English CS vocabulary like "best practices", "code review", "pull
+request"), product names, and proper nouns stay in their original language —
+an earlier absolute wording of the lock ("in no other language") silently
+overrode the terminology rule and folded English terms into the dominant
+language. A German form-of-address block mirrors the input's T–V register
+("du" stays "du" for every tone, including professional; "Sie" only when the
+input uses "Sie"); the same mirroring rule is appended to German-target
+translation prompts. Translate to Romanian comes in two variants: proper
+diacritics (prompt rule) and a plain-ASCII variant (prompt rule +
+deterministic `stripRomanianDiacritics` post-processing). Temperatures:
+correct/translate 0.2, reformulate 0.3 (keep) / 0.4, summarize 0.3.
 
 ## Permissions, privacy, security
 

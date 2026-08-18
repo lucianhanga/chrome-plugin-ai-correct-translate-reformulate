@@ -38,6 +38,22 @@ describe('GRAMMAR_CORRECT_SYSTEM', () => {
     expect(GRAMMAR_CORRECT_SYSTEM).toMatch(/never translate .* into english/i);
   });
 
+  it('handles mixed-language input: correct in the dominant language', () => {
+    // Regression guard: a message that is mostly one language with a minority
+    // second language must be corrected in the DOMINANT language, never in the
+    // minority one.
+    expect(GRAMMAR_CORRECT_SYSTEM).toContain('dominant language');
+    expect(GRAMMAR_CORRECT_SYSTEM).toMatch(/mix(es)? languages/i);
+  });
+
+  it('keeps foreign technical terms in their original language', () => {
+    // Regression guard: English computer-science vocabulary (e.g. "best
+    // practices", "code review", "pull request") must stay in English; only
+    // grammar and spelling around it is corrected.
+    expect(GRAMMAR_CORRECT_SYSTEM).toMatch(/technical terms/i);
+    expect(GRAMMAR_CORRECT_SYSTEM).toContain('original language');
+  });
+
   it('handles empty input instruction', () => {
     expect(GRAMMAR_CORRECT_SYSTEM).toContain('empty');
   });
@@ -85,6 +101,21 @@ describe('buildTranslateSystemPrompt', () => {
     expect(buildTranslateSystemPrompt('Romanian')).toContain('Translate the text to Romanian');
     expect(buildTranslateSystemPrompt('Romanian (no diacritics)')).toContain('Translate the text to Romanian');
   });
+
+  it('German target mirrors the source form of address (informal -> du, formal -> Sie)', () => {
+    // Translating into German must not force the formal "Sie": informal source
+    // text comes back with "du"; "Sie" only for clearly formal sources.
+    const prompt = buildTranslateSystemPrompt('German');
+    expect(prompt).toMatch(/form of address/i);
+    expect(prompt).toContain('"du"');
+    expect(prompt).toContain('"Sie"');
+  });
+
+  it('non-German targets carry no German form-of-address rule', () => {
+    for (const lang of ['English', 'Romanian', 'Romanian (no diacritics)', 'Spanish', 'Italian'] as const) {
+      expect(buildTranslateSystemPrompt(lang)).not.toMatch(/form of address/i);
+    }
+  });
 });
 
 // ============================================================
@@ -110,28 +141,57 @@ describe('buildReformulateSystemPrompt', () => {
     expect(prompt).toContain('Output ONLY the reformulated text');
   });
 
-  it('instructs to detect the input language and respond in it for every tone', () => {
+  it('instructs to identify the dominant input language and respond in it for every tone', () => {
     // Regression guard for the bug where Romanian text reformulated to English.
     // Every tone shares REFORMULATE_CORE, so the instruction must be present in all.
     for (const tone of ['keep', 'professional', 'friendly', 'natural'] as const) {
       const prompt = buildReformulateSystemPrompt(tone, true);
-      expect(prompt).toContain('detect the language');
-      expect(prompt).toContain('same detected language');
+      expect(prompt).toContain('dominant language');
+      expect(prompt).toContain('same dominant language');
       expect(prompt).toMatch(/never translate .* into english/i);
     }
   });
 
-  it('locks the output language to the input language for every tone (no translation)', () => {
+  it('explains that mixed-language input still has one dominant language', () => {
+    // Regression guard: with mixed-language input the model used to pick the
+    // minority ("second") language. The core must state that borrowed foreign
+    // words do not change the dominant language.
+    for (const tone of ['keep', 'professional', 'friendly', 'natural'] as const) {
+      const prompt = buildReformulateSystemPrompt(tone, true);
+      expect(prompt).toMatch(/mix(es)? languages/i);
+      expect(prompt).toMatch(/minority language/i);
+    }
+  });
+
+  it('locks the output language to the dominant input language for every tone (no translation)', () => {
     // Regression guard for the inverse bug: English text reformulated with the
     // "professional" tone drifted into Romanian. The language lock must be
     // present for all tones and must state that tone changes never change the
     // language.
     for (const tone of ['keep', 'professional', 'friendly', 'natural'] as const) {
       const prompt = buildReformulateSystemPrompt(tone, true);
-      expect(prompt).toContain('output language is locked to the language of the input');
+      expect(prompt).toContain('output language is locked to the dominant language of the input');
       expect(prompt).toMatch(/NEVER means changing its language/);
       expect(prompt).toContain('overrides every tone');
     }
+  });
+
+  it('the language lock never contradicts keep-terminology (no absolute single-language demand)', () => {
+    // Regression guard for the terminology-folding bug: the lock previously
+    // demanded the output be written "in that exact same language and in no
+    // other language", which silently overrode the keep-terminology rule and
+    // made the model translate English CS terms into the dominant language.
+    const prompt = buildReformulateSystemPrompt('professional', true);
+    expect(prompt).not.toContain('in no other language');
+  });
+
+  it('includes a terminology exception in the lock only when keepTerminology is true', () => {
+    const withKeep = buildReformulateSystemPrompt('professional', true);
+    const withoutKeep = buildReformulateSystemPrompt('professional', false);
+    expect(withKeep).toMatch(/technical terms.*original language/is);
+    // Without keep-terminology there must be no carve-out the model could use
+    // to justify leaving foreign words untranslated.
+    expect(withoutKeep).not.toMatch(/The ONLY exception/);
   });
 
   it('enumerates every supported language in the language lock', () => {
@@ -146,7 +206,7 @@ describe('buildReformulateSystemPrompt', () => {
     // instruction that biases language switching.
     const prompt = buildReformulateSystemPrompt('professional', true);
     const toneIdx = prompt.indexOf('professional, formal, and official');
-    const lockIdx = prompt.indexOf('output language is locked to the language of the input');
+    const lockIdx = prompt.indexOf('output language is locked to the dominant language of the input');
     expect(toneIdx).toBeGreaterThan(-1);
     expect(lockIdx).toBeGreaterThan(toneIdx);
   });
@@ -178,6 +238,28 @@ describe('buildReformulateSystemPrompt', () => {
     const prompt = buildReformulateSystemPrompt('keep', true);
     expect(prompt).toContain('dominant language');
     expect(prompt).toContain('domain-specific term');
+  });
+
+  it('terminology-keep clause names computer-science vocabulary as keep-in-English examples', () => {
+    // The user's core use case: English CS terms ("best practices", "code
+    // review", "pull request") inside a non-English message must stay English.
+    const prompt = buildReformulateSystemPrompt('keep', true);
+    expect(prompt).toContain('best practices');
+    expect(prompt).toContain('code review');
+    expect(prompt).toContain('pull request');
+  });
+
+  it('mirrors the German form of address (du/Sie) for every tone, including professional', () => {
+    // German T-V distinction: input using informal "du" must come back with
+    // "du" even under the professional tone; "Sie" only when the input uses
+    // "Sie". A professional tone changes vocabulary, never the form of address.
+    for (const tone of ['keep', 'professional', 'friendly', 'natural'] as const) {
+      const prompt = buildReformulateSystemPrompt(tone, true);
+      expect(prompt).toMatch(/German form of address/i);
+      expect(prompt).toContain('"du"');
+      expect(prompt).toContain('"Sie"');
+      expect(prompt).toContain("never the form of address");
+    }
   });
 
   it('includes terminology-free clause when keepTerminology is false', () => {
